@@ -1,0 +1,47 @@
+# ---------------------------------------------------------------------------
+# Personal memory database — contains private data, NEVER commit.
+# The schema is reproducible from memory_init.py, so the DB itself is local-only.
+# ---------------------------------------------------------------------------
+memory.db
+memory.db-wal
+memory.db-shm
+memory.db-journal
+# backups (memory.db.bak-YYYYMMDD-..., *.bak, *.sqlite copies)
+memory.db.bak*
+*.bak
+*.sqlite
+*.sqlite3
+*.db-backup
+
+# Local one-off / scratch scripts
+_*.py
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments (managed with uv)
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------------------
+# Editors / OS
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
