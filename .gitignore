@@ -13,8 +13,10 @@ memory.db.bak*
 *.sqlite3
 *.db-backup
 
-# Local one-off / scratch scripts
+# Local one-off / scratch scripts (leading underscore) — but keep package files
 _*.py
+!__init__.py
+!__main__.py
 
 # ---------------------------------------------------------------------------
 # Python

@@ -10,7 +10,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, Field
 
@@ -34,6 +34,8 @@ _FTS_OPERATORS = {"OR", "AND", "NOT", "NEAR"}
 # Allowed privacy levels. 'sensitive'/'secret' are stored but never returned by
 # the read tools — viewable only in the web UI.
 Sensitivity = Literal["public", "normal", "private", "sensitive", "secret"]
+
+_DISTINCTABLE = {"category", "type", "source"}
 
 
 class StoreError(Exception):
@@ -127,7 +129,7 @@ class MemoryFilter(BaseModel):
     """
 
     choices: dict[
-        Literal["status", "category", "type", "sensitivity", "tags", "source"],
+        Literal["status", "category", "type", "sensitivity", "source"],
         list[str],
     ] = Field(
         default_factory=dict,
@@ -160,8 +162,8 @@ class MemoryFilter(BaseModel):
     ] = Field("created_at", description="Column to sort by.")
     descending: bool = Field(True, description="Sort descending (newest / highest first).")
 
-    limit: int = Field(50, ge=1, le=500, description="Max number of rows to return.")
-    offset: int = Field(0, ge=0, description="Rows to skip, for pagination.")
+    #limit: int = Field(50, ge=1, le=500, description="Max number of rows to return.")
+    #offset: int = Field(0, ge=0, description="Rows to skip, for pagination.")
 
 
 # --------------------------------------------------------------------------- #
@@ -225,34 +227,57 @@ def get_mem(ids: list[int]) -> list[dict[str, Any]]:
         rows = conn.execute(sql, ids).fetchall()
     return [_row_to_dict(r) for r in rows]
 
+def get_one_mem(id: int) -> dict[str, Any]:
+    """Fetch a single memory by id, in ANY status and ANY sensitivity.
+
+    The admin / web-UI getter — unlike `get_mem`, which hides non-active and
+    secret rows. Raises ``StoreError`` if no memory has that id.
+    """
+    with _session() as conn:
+        row = conn.execute("SELECT * FROM memories WHERE id = ?", (id,)).fetchone()
+    if row is None:
+        raise StoreError(f"get_one: no memory with id {id}.")
+    return _row_to_dict(row)
+
 
 # --------------------------------------------------------------------------- #
 # Writes
 # --------------------------------------------------------------------------- #
-def suggest_mem(items: list[MemoryInput]) -> list[dict[str, Any]]:
-    """Insert memories as 'candidate' (invisible to search until approved)."""
-    if not items:
-        return []
+def _insert_memories(
+    conn: sqlite3.Connection, items: list[MemoryInput], status: str
+) -> list[dict[str, Any]]:
+    """Insert memories with the given lifecycle status; return the created rows.
+
+    Shared by `suggest_mem` (status='candidate') and `commit_active`
+    (status='active') — the status value is the only difference between them.
+    """
     insert = """
              INSERT INTO memories
              (type, category, title, body, tags, confidence,
               sensitivity, source, status, valid_from, valid_to, supersedes)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'candidate', ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              """
-    with _session(write=True) as conn:
-        ids = []
-        for m in items:
-            cur = conn.execute(
-                insert,
-                (m.type, m.category, m.title, m.body, m.tags, m.confidence,
-                 m.sensitivity, m.source, m.valid_from, m.valid_to, m.supersedes),
-            )
-            ids.append(cur.lastrowid)
-        placeholders = ",".join("?" * len(ids))
-        rows = conn.execute(
-            f"SELECT * FROM memories WHERE id IN ({placeholders})", ids
-        ).fetchall()
+    ids = []
+    for m in items:
+        cur = conn.execute(
+            insert,
+            (m.type, m.category, m.title, m.body, m.tags, m.confidence,
+             m.sensitivity, m.source, status, m.valid_from, m.valid_to, m.supersedes),
+        )
+        ids.append(cur.lastrowid)
+    placeholders = ",".join("?" * len(ids))
+    rows = conn.execute(
+        f"SELECT * FROM memories WHERE id IN ({placeholders})", ids
+    ).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+def suggest_mem(items: list[MemoryInput]) -> list[dict[str, Any]]:
+    """Propose memories as 'candidate' (indexed, but invisible to search until approved)."""
+    if not items:
+        return []
+    with _session(write=True) as conn:
+        return _insert_memories(conn, items, "candidate")
 
 
 def update_mem(id: int, fields: dict[str, Any]) -> dict[str, Any]:
@@ -384,10 +409,56 @@ def list_memories(f: MemoryFilter) -> list[dict[str, Any]]:
 
     # order_by is Literal-restricted -> safe to inline; direction is fixed text.
     direction = "DESC" if f.descending else "ASC"
-    cond += f" ORDER BY {f.order_by} {direction} LIMIT ? OFFSET ?"
-    params += [f.limit, f.offset]
+    cond += f" ORDER BY {f.order_by} {direction}"
+    # Paging is disabled for now (small store). To re-enable, restore `limit`/
+    # `offset` on MemoryFilter and append here:
+    #   cond += " LIMIT ? OFFSET ?"
+    #   params += [f.limit, f.offset]
 
     sql = f"SELECT * FROM memories {cond}"
     with _session() as conn:
         rows = conn.execute(sql, params).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+def distinct_values(column: str) -> list[str]:
+    """Distinct values present in an allow-listed open column (category/type/source).
+
+    Used to build the web-UI filter dropdowns. The column name is validated
+    against `_DISTINCTABLE` before being inlined into the query.
+    """
+    if column not in _DISTINCTABLE:
+        raise StoreError(f"distinct: column '{column}' not allowed.")
+    with _session() as conn:
+        rows = conn.execute(
+            f"SELECT DISTINCT {column} FROM memories ORDER BY {column}"
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
+def facets() -> dict[str, list[str]]:
+    """Filter options for the web-UI, keyed by column.
+
+    Closed sets come from the schema: ``status`` from the lifecycle, ``sensitivity``
+    from the ``Sensitivity`` Literal. Open sets (``category``, ``type``, ``source``)
+    are the distinct values currently present in the DB.
+    """
+    return {
+        "status": ["candidate", "active", "superseded", "rejected"],
+        "sensitivity": list(get_args(Sensitivity)),
+        "category": distinct_values("category"),
+        "type": distinct_values("type"),
+        "source": distinct_values("source"),
+    }
+
+
+def commit_active(item: MemoryInput) -> dict[str, Any]:
+    """Insert a single memory directly as 'active' (immediately searchable).
+
+    The admin / web-UI path for adding a memory without the candidate→approve
+    step. Does NOT perform a supersede swap — to replace an existing memory use
+    the candidate path (suggest with ``supersedes``, then approve).
+    """
+    with _session(write=True) as conn:
+        return _insert_memories(conn, [item], "active")[0]
+
+

@@ -184,7 +184,7 @@ def test_secret_visible_in_list_not_in_search():
     assert store.search_mem("topsecret") == []        # model cannot
 
 
-def test_list_filters_search_order_and_paging():
+def test_list_filters_search_and_order():
     _fresh_db()
     seed_into_db()
     hw = store.list_memories(MemoryFilter(choices={"category": ["hardware"]}))
@@ -192,8 +192,42 @@ def test_list_filters_search_order_and_paging():
     assert any("Python" in m["body"] for m in store.list_memories(MemoryFilter(search="Python")))
     titles = [m["title"] for m in store.list_memories(MemoryFilter(order_by="title", descending=False))]
     assert titles == sorted(titles)                   # real ordering, not a constant
-    page = store.list_memories(MemoryFilter(limit=2, offset=0, order_by="title", descending=False))
-    assert len(page) == 2
+
+
+def test_get_one_returns_any_status_and_raises_on_missing():
+    _fresh_db()
+    cand = store.suggest_mem([MemoryInput(title="C", body="x", sensitivity="secret")])[0]
+    got = store.get_one_mem(cand["id"])               # candidate + secret -> still returned
+    assert got["id"] == cand["id"] and got["status"] == "candidate"
+    try:
+        store.get_one_mem(999999)
+        assert False, "expected StoreError"
+    except StoreError:
+        pass
+
+
+def test_commit_active_inserts_active_and_searchable():
+    _fresh_db()
+    row = store.commit_active(MemoryInput(title="Widget", body="alpha bravo", category="tools"))
+    assert row["status"] == "active"
+    assert any(h["id"] == row["id"] for h in store.search_mem("alpha"))
+
+
+def test_distinct_values_and_facets():
+    _fresh_db()
+    seed_into_db()
+    cats = store.distinct_values("category")
+    assert "hardware" in cats and "tech_stack" in cats
+    try:
+        store.distinct_values("body")                 # not allow-listed
+        assert False, "expected StoreError"
+    except StoreError:
+        pass
+    f = store.facets()
+    assert set(f) == {"status", "sensitivity", "category", "type", "source"}
+    assert "secret" in f["sensitivity"]               # from the Literal, not the DB
+    assert set(f["status"]) == {"candidate", "active", "superseded", "rejected"}
+    assert "hardware" in f["category"]
 
 
 def test_list_timestamp_filter_and_bad_operator():
