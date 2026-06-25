@@ -6,13 +6,15 @@
 
 **What:** A local SQLite + FTS5 personal-memory store for AI assistants, exposed
 via a FastMCP server, with a human-in-the-loop approval flow.
-**Stack:** Python ≥3.14, stdlib `sqlite3` + FTS5, Pydantic v2, FastMCP (stdio), uv.
+**Stack:** Python ≥3.14, stdlib `sqlite3` + FTS5, Pydantic v2, FastMCP (stdio),
+FastAPI (JSON API), React + Vite (frontend), uv.
 **Who uses it:** AI assistants (Claude, Codex) read/propose; the human reviews.
 
 ## Current Focus
 
-Build a local **FastAPI + htmx web UI** (admin/review surface) on top of the
-existing store layer. The MCP side is MVP-complete and registered with Claude
+Build the **React + Vite frontend** (`frontend/`) over the now-complete **FastAPI
+JSON API** (`api/app.py`) — a localhost admin/review surface ([ADR-004](docs/decisions/ADR-004-react-vite-frontend.md)).
+The MCP side and the store/API are MVP-complete; MCP is registered with Claude
 Code as `personal-mem`. See `docs/current-goals.md`.
 
 ## Before You Code
@@ -47,7 +49,9 @@ Code as `personal-mem`. See `docs/current-goals.md`.
 
 - `personal_mem_store.py` — domain layer (logic + models + `StoreError`)
 - `personal_mem_mcp.py` — FastMCP server (5 thin tools)
-- `memory_init.py` — schema setup · `personal_mem_test.py` — seeds + 14 tests
+- `api/app.py` — FastAPI JSON API (transport 2, localhost admin)
+- `frontend/` — React + Vite SPA (in progress)
+- `memory_init.py` — schema setup · `personal_mem_test.py` — seeds + 17 tests
 - `memory.db` — the store (source of truth)
 
 ## Memory Updates

@@ -17,16 +17,18 @@ token-efficient memory they can query on demand instead of being re-told context
 |---|---|---|
 | Domain layer / store | All SQLite logic, Pydantic models, `StoreError`, `_session`. No transport deps. | `personal_mem_store.py` |
 | MCP server | Thin FastMCP wrappers; LLM docstrings/governance; `StoreError`→`ToolError`. | `personal_mem_mcp.py` |
+| Web API (transport 2) | Thin FastAPI JSON layer; `StoreError`→HTTP 400; localhost admin. | `api/app.py` |
+| Web UI (in progress) | React + TypeScript + Vite SPA; calls the API; localhost only. | `frontend/` |
 | Schema init | Creates `memories` table, `memories_fts` (FTS5), and the sync triggers. | `memory_init.py` |
-| Tests + seeds | Anonymous sample seeds + 14-test suite on throwaway DB copies. | `personal_mem_test.py` |
-| Web UI (planned) | Local FastAPI + htmx admin/review surface; reuses the store. | _not built yet_ |
+| Tests + seeds | Anonymous sample seeds + 17-test suite on throwaway DB copies. | `personal_mem_test.py` |
 
 ## Data Flow
 
 ```
-Assistant ─(MCP/stdio)→ personal_mem_mcp.py ─→ personal_mem_store.py ─→ memory.db (+ FTS5)
-                                                         ▲
-Web UI (planned, FastAPI+htmx) ──────────────────────────┘  (same store layer)
+Assistant ──(MCP/stdio)────→ personal_mem_mcp.py ─┐
+                                                  ├─→ personal_mem_store.py ─→ memory.db (+ FTS5)
+React SPA ──(HTTP/JSON)──→ api/app.py (FastAPI) ──┘   (same store layer, two thin transports)
+   (frontend/, via Vite dev proxy /memories → :8000)
 ```
 
 - **Reads** (`search_memories`, `get_memories`): active-only, exclude `sensitive`/`secret`.
@@ -43,8 +45,9 @@ Web UI (planned, FastAPI+htmx) ────────────────�
 | Storage | SQLite + FTS5 | stdlib `sqlite3`; `tokenize='unicode61'` (mixed DE/EN/tech terms) |
 | Models/validation | Pydantic | `>=2.13.4` |
 | MCP server | FastMCP | `>=3.4.2`, stdio transport |
-| Package manager | uv | `.venv/`, `uv.lock` |
-| Web UI (planned) | FastAPI + htmx | server-rendered, local only (127.0.0.1) |
+| Web API | FastAPI | JSON over the store; `fastapi dev api/app.py`; localhost only |
+| Web UI | React + TypeScript + Vite | `frontend/`; ESLint; Vite dev proxy → API ([ADR-004](decisions/ADR-004-react-vite-frontend.md)) |
+| Package manager | uv (Python) · npm (frontend) | `.venv/`, `uv.lock`; `frontend/node_modules` |
 
 ## Key Constraints
 
@@ -74,12 +77,31 @@ FTS5 `content='memories'` option). FTS index: `memories_fts` over
 | `update_memory(id, …content fields)` | write | in-place content edit; no status change |
 | `approve_reject_memories(decisions: list[Decision])` | review | human-triggered; carries supersede swap |
 
+## Web API endpoints (`api/app.py`, localhost only)
+
+| Endpoint | Store fn | Notes |
+|---|---|---|
+| `POST /memories/search` | `list_memories(MemoryFilter)` | filter/search/sort; ANY status/sensitivity |
+| `POST /memories/suggest` | `suggest_mem` | create candidates |
+| `POST /memories/commit` | `commit_active` | create one memory directly active |
+| `POST /memories/review` | `review_mem` | approve/reject (+ supersede swap) |
+| `GET /memories/facets` | `facets` | filter options (declared **before** `{id}`) |
+| `GET /memories/{id}` | `get_one_mem` | one memory, ANY status/sensitivity |
+| `PATCH /memories/{id}` | `update_mem` | partial content edit |
+
+Store also has admin-only reads the MCP must **not** expose: `list_memories`,
+`get_one_mem`, `distinct_values`, `facets`; and a direct write `commit_active`.
+`suggest_mem`/`commit_active` share the `_insert_memories` helper (only the
+`status` differs). `Sensitivity` is the shared `Literal` for the privacy levels.
+
 ## Important Files / Entry Points
 
 | File | Purpose |
 |---|---|
 | `personal_mem_mcp.py` | MCP entry point (`python personal_mem_mcp.py` → stdio) |
 | `personal_mem_store.py` | Domain layer (library, no `main`) |
+| `api/app.py` | FastAPI JSON API (`fastapi dev api/app.py` → :8000, docs at `/docs`) |
+| `frontend/` | React + Vite SPA (`cd frontend && npm run dev` → :5173) |
 | `memory_init.py` | One-off schema setup (`python memory_init.py`) |
 | `personal_mem_test.py` | Seeds + tests (`python personal_mem_test.py` or pytest) |
 | `memory.db` | The SQLite store (source of truth) |

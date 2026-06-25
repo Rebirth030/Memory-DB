@@ -17,3 +17,4 @@ Each significant technical decision gets its own file here.
 - [ADR-001](ADR-001-approval-flow.md) — Memory lifecycle & human-in-the-loop approval flow (**LOCKED**)
 - [ADR-002](ADR-002-store-transport-split.md) — Store / transport split
 - [ADR-003](ADR-003-secrets-write-not-read.md) — Secrets: writable by the model, never readable
+- [ADR-004](ADR-004-react-vite-frontend.md) — Web UI: React + Vite frontend over a FastAPI JSON API

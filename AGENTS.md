@@ -20,7 +20,8 @@ Do not start reading arbitrary source files until you have read these.
 ## Project in One Line
 
 A local SQLite + FTS5 personal-memory store exposed to AI assistants via a
-FastMCP server, with a human-approval flow. A local web UI is the next build.
+FastMCP server, with a human-approval flow. A localhost FastAPI JSON API exists;
+a React + Vite frontend over it is the current build ([ADR-004](docs/decisions/ADR-004-react-vite-frontend.md)).
 
 ## Non-Negotiable Rules
 
@@ -48,7 +49,7 @@ FastMCP server, with a human-approval flow. A local web UI is the next build.
 
 ## After Changes
 
-- Run the test suite: `.venv/Scripts/python.exe personal_mem_test.py` (14 tests).
+- Run the test suite: `.venv/Scripts/python.exe personal_mem_test.py` (17 tests).
 - Note any permanent architectural decision in `docs/decisions/`.
 - If the session produced useful context, add a handoff to `docs/inbox/`.
 
