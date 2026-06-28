@@ -6,6 +6,7 @@ import and reuse it. Transports translate `StoreError` into their own error
 type (the MCP server raises `ToolError`).
 """
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -14,7 +15,9 @@ from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, Field
 
-DB_PATH = Path(__file__).parent / "memory.db"
+# Defaults to the real store next to this file; set PERSONAL_MEM_DB to point a
+# transport (e.g. the web API) at another database, such as the demo seed DB.
+DB_PATH = Path(os.environ.get("PERSONAL_MEM_DB", Path(__file__).parent / "memory.db"))
 
 # Content fields update_mem may change. Status transitions
 # (candidate->active, ->superseded, ->rejected) go through review_mem alone,

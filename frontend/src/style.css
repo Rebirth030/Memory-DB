@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+:root {
+    --bg: #141418;
+    --surface: #1c1c23;
+    --raised: #24242d;
+    --border: #34343f;
+    --line: #2a2a33;
+    --text: #ECEAE6;
+    --text2: #aeaca7;
+    --muted: #79766f;
+    --shadow: 0 1px 2px rgba(0,0,0,.45), 0 8px 26px rgba(0,0,0,.34);
+    --accent: #ea7a4c;
+    --accent-bg: rgba(234,122,76,.15);
+    --accent-border: rgba(234,122,76,.55);
+    --cand: #ee8a57;
+    --cand-bg: rgba(234,122,76,.14);
+    --active: #5fb487;
+    --active-bg: rgba(95,180,135,.14);
+    --super: #8c887f;
+    --super-bg: rgba(140,136,127,.12);
+    --reject: #df8a76;
+    --reject-bg: rgba(223,138,118,.13);
+    --lockfg: #d6c39c;
+    --lockbg: #2b2922;
+    --inputbg: #202028;
+}
+
+:root[data-theme="light"] {
+    --bg: #f4f2ec;
+    --surface: #ffffff;
+    --raised: #ffffff;
+    --border: #e4e1d9;
+    --line: #edeae3;
+    --text: #1b1a17;
+    --text2: #55524c;
+    --muted: #928e86;
+    --shadow: 0 1px 2px rgba(40,33,22,.06), 0 6px 18px rgba(40,33,22,.06);
+    --accent: #c2410c;
+    --accent-bg: rgba(194,65,12,.08);
+    --accent-border: rgba(194,65,12,.42);
+    --cand: #c2410c;
+    --cand-bg: rgba(194,65,12,.07);
+    --active: #2f7d52;
+    --active-bg: rgba(47,125,82,.08);
+    --super: #8f8b83;
+    --super-bg: rgba(143,139,131,.10);
+    --reject: #b0473f;
+    --reject-bg: rgba(176,71,63,.07);
+    --lockfg: #7a6a45;
+    --lockbg: #f0ebdf;
+    --inputbg: #faf9f6;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+input, textarea, select, button { font-family: inherit; }
+textarea, input { outline: none; }

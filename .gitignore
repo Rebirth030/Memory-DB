@@ -6,6 +6,11 @@ memory.db
 memory.db-wal
 memory.db-shm
 memory.db-journal
+# generated demo database (reproducible from seed_demo.py) — local-only
+demo.db
+demo.db-wal
+demo.db-shm
+demo.db-journal
 # backups (memory.db.bak-YYYYMMDD-..., *.bak, *.sqlite copies)
 memory.db.bak*
 *.bak
