@@ -53,6 +53,14 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
 input, textarea, select, button { font-family: inherit; }
 textarea, input { outline: none; }

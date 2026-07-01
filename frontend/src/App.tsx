@@ -5,6 +5,7 @@ import Home from "./pages/Home.tsx";
 import Review from "./pages/Review.tsx";
 import Add from "./pages/Add.tsx";
 import Browse from "./pages/Browse.tsx";
+import Detail from "./pages/Detail.tsx";
 
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
                 <Route path="/" element={<Home />} />
                 <Route path="/review" element={<Review />} />
                 <Route path="/browse" element={<Browse />} />
+                <Route path="/memory/:id" element={<Detail />} />
                 <Route path="/add" element={<Add />} />
             </Routes>
         </div>

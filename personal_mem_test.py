@@ -167,6 +167,54 @@ def test_update_missing_id_raises():
         pass
 
 
+def test_update_supersedes_swaps_active_target():
+    _fresh_db()
+    old = store.commit_active(MemoryInput(title="Old", body="old body"))
+    new = store.commit_active(MemoryInput(title="New", body="new body"))
+    out = store.update_mem(new["id"], {"supersedes": old["id"]})
+    assert out["supersedes"] == old["id"]
+    retired = store.get_one_mem(old["id"])
+    assert retired["status"] == "superseded" and retired["valid_to"]
+    assert store.get_one_mem(new["id"])["status"] == "active"   # editor stays active
+
+
+def test_update_supersedes_on_candidate_does_not_swap():
+    _fresh_db()
+    old = store.commit_active(MemoryInput(title="Old", body="x"))
+    cand = store.suggest_mem([MemoryInput(title="Cand", body="y")])[0]
+    store.update_mem(cand["id"], {"supersedes": old["id"]})  # candidate: pointer only
+    assert store.get_one_mem(old["id"])["status"] == "active"  # not retired yet
+
+
+def test_update_supersedes_guards():
+    _fresh_db()
+    a = store.commit_active(MemoryInput(title="A", body="x"))
+    for bad in ({"supersedes": a["id"]}, {"supersedes": 999999}):  # self / missing target
+        try:
+            store.update_mem(a["id"], bad)
+            assert False, "expected StoreError"
+        except StoreError:
+            pass
+
+
+def test_commit_active_with_supersedes_swaps():
+    _fresh_db()
+    old = store.commit_active(MemoryInput(title="Old", body="x"))
+    new = store.commit_active(MemoryInput(title="New", body="y", supersedes=old["id"]))
+    assert new["supersedes"] == old["id"] and new["status"] == "active" and new["valid_from"]
+    retired = store.get_one_mem(old["id"])
+    assert retired["status"] == "superseded" and retired["valid_to"] == new["valid_from"]
+
+
+def test_commit_active_supersedes_missing_target_raises():
+    _fresh_db()
+    try:
+        store.commit_active(MemoryInput(title="x", body="y", supersedes=999999))
+        assert False, "expected StoreError"
+    except StoreError:
+        pass
+
+
 def test_reads_hide_candidates_and_secrets():
     _fresh_db()
     cand = store.suggest_mem([MemoryInput(title="C", body="candidate body")])[0]

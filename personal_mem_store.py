@@ -13,18 +13,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # Defaults to the real store next to this file; set PERSONAL_MEM_DB to point a
 # transport (e.g. the web API) at another database, such as the demo seed DB.
 DB_PATH = Path(os.environ.get("PERSONAL_MEM_DB", Path(__file__).parent / "memory.db"))
 
-# Content fields update_mem may change. Status transitions
-# (candidate->active, ->superseded, ->rejected) go through review_mem alone,
-# so the lifecycle stays auditable.
+# Fields update_mem may change. Setting `supersedes` on an ACTIVE memory also
+# retires the target (-> 'superseded'), mirroring the approve-time swap in
+# review_mem. Other status transitions (candidate->active, ->rejected) go
+# through review_mem alone, so the lifecycle stays auditable.
 _UPDATABLE = {
     "title", "body", "tags", "category", "type",
-    "confidence", "sensitivity", "valid_from", "valid_to",
+    "confidence", "sensitivity", "valid_from", "valid_to", "supersedes",
 }
 
 # Comparison operators allowed in MemoryFilter.timestamps. Ordered longest-first
@@ -37,6 +38,9 @@ _FTS_OPERATORS = {"OR", "AND", "NOT", "NEAR"}
 # Allowed privacy levels. 'sensitive'/'secret' are stored but never returned by
 # the read tools — viewable only in the web UI.
 Sensitivity = Literal["public", "normal", "private", "sensitive", "secret"]
+
+# Lifecycle states (the `status` column).
+Status = Literal["candidate", "active", "superseded", "rejected"]
 
 _DISTINCTABLE = {"category", "type", "source"}
 
@@ -115,6 +119,51 @@ class MemoryInput(BaseModel):
     supersedes: int | None = Field(None, description="Replace this memory by the one with this id.")
 
 
+class Memory(BaseModel):
+    """A stored memory row — the web API's response shape (and OpenAPI schema).
+
+    The store functions return plain dicts; FastAPI validates/serializes them
+    against this model via the endpoints' return annotations. That is what gives
+    `/docs` a full schema and lets the frontend generate its types from it.
+    """
+
+    id: int
+    type: str
+    category: str
+    title: str
+    body: str
+    tags: str
+    confidence: float
+    sensitivity: Sensitivity
+    status: Status
+    source: str
+    supersedes: int | None
+    reason: str | None
+    created_at: str
+    updated_at: str
+    valid_from: str | None
+    valid_to: str | None
+
+
+class MemoryUpdate(BaseModel):
+    """Partial edit for PATCH /memories/:id — every field optional, only the
+    ones sent are applied. Mirrors the editable set; status / source / timestamps
+    stay read-only (status changes via review)."""
+
+    model_config = ConfigDict(extra="forbid")  # unknown fields -> 422, not silently dropped
+
+    title: str | None = None
+    body: str | None = None
+    tags: str | None = None
+    category: str | None = None
+    type: str | None = None
+    confidence: float | None = Field(None, ge=0.0, le=1.0)
+    sensitivity: Sensitivity | None = None
+    valid_from: str | None = None
+    valid_to: str | None = None
+    supersedes: int | None = None
+
+
 class Decision(BaseModel):
     """One review decision for a candidate memory."""
 
@@ -167,6 +216,16 @@ class MemoryFilter(BaseModel):
 
     #limit: int = Field(50, ge=1, le=500, description="Max number of rows to return.")
     #offset: int = Field(0, ge=0, description="Rows to skip, for pagination.")
+
+
+class Facets(BaseModel):
+    """Filter dropdown options (response shape of `facets()` for the API)."""
+
+    status: list[str]
+    sensitivity: list[str]
+    category: list[str]
+    type: list[str]
+    source: list[str]
 
 
 # --------------------------------------------------------------------------- #
@@ -283,11 +342,35 @@ def suggest_mem(items: list[MemoryInput]) -> list[dict[str, Any]]:
         return _insert_memories(conn, items, "candidate")
 
 
-def update_mem(id: int, fields: dict[str, Any]) -> dict[str, Any]:
-    """Update content fields of one memory in place (no status change).
+def _retire_supersede_target(conn: sqlite3.Connection, old_id: int, now: str) -> None:
+    """Mark a supersede target 'superseded' if it is currently active.
 
-    ``fields`` may carry ``None`` values (ignored). Raises ``StoreError`` if
-    nothing is left to update, an unknown field is given, or the id is missing.
+    Shared by ``update_mem`` and ``commit_active`` for direct (admin) supersedes:
+    raises ``StoreError`` if the target does not exist; leaves a non-active
+    target untouched. (``review_mem`` keeps its own stricter check.)
+    """
+    old = conn.execute("SELECT status FROM memories WHERE id = ?", (old_id,)).fetchone()
+    if old is None:
+        raise StoreError(f"supersede target {old_id} does not exist.")
+    if old["status"] == "active":
+        conn.execute(
+            "UPDATE memories SET status = 'superseded', valid_to = ? WHERE id = ?",
+            (now, old_id),
+        )
+
+
+def update_mem(id: int, fields: dict[str, Any]) -> dict[str, Any]:
+    """Update fields of one memory in place.
+
+    ``fields`` may carry ``None`` values (ignored); only keys in ``_UPDATABLE``
+    are allowed. Setting ``supersedes`` is special: if an ACTIVE memory is
+    pointed at a target, the target is swapped to 'superseded' (its ``valid_to``
+    closes) in the same transaction — the same swap ``review_mem`` does at
+    approval. For a candidate the pointer is only stored; its swap still happens
+    at approval.
+
+    Raises ``StoreError`` if nothing is left to update, an unknown field is
+    given, the id is missing, or the supersede target is invalid.
     """
     fields = {k: v for k, v in fields.items() if v is not None}
     if not fields:
@@ -296,12 +379,24 @@ def update_mem(id: int, fields: dict[str, Any]) -> dict[str, Any]:
     if unknown:
         raise StoreError(f"update: fields not updatable: {sorted(unknown)}.")
 
+    new_super = fields.get("supersedes")
+    if new_super is not None and new_super == id:
+        raise StoreError("update: a memory cannot supersede itself.")
+
     set_clause = ", ".join(f"{col} = ?" for col in fields)
     params = [*fields.values(), id]
     with _session(write=True) as conn:
-        cur = conn.execute(f"UPDATE memories SET {set_clause} WHERE id = ?", params)
-        if cur.rowcount == 0:
+        target = conn.execute("SELECT status FROM memories WHERE id = ?", (id,)).fetchone()
+        if target is None:
             raise StoreError(f"update: no memory with id {id}.")
+
+        # An ACTIVE memory pointed at a supersede target retires that target.
+        # (A candidate just stores the pointer; the swap happens at approval.)
+        if new_super is not None and target["status"] == "active":
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            _retire_supersede_target(conn, new_super, now)
+
+        conn.execute(f"UPDATE memories SET {set_clause} WHERE id = ?", params)
         row = conn.execute("SELECT * FROM memories WHERE id = ?", (id,)).fetchone()
     return _row_to_dict(row)
 
@@ -458,10 +553,15 @@ def commit_active(item: MemoryInput) -> dict[str, Any]:
     """Insert a single memory directly as 'active' (immediately searchable).
 
     The admin / web-UI path for adding a memory without the candidate→approve
-    step. Does NOT perform a supersede swap — to replace an existing memory use
-    the candidate path (suggest with ``supersedes``, then approve).
+    step. If ``supersedes`` is set, the target is retired ('superseded') and the
+    new memory opens its ``valid_from`` at the same instant — the same swap
+    ``review_mem`` does at approval. Raises ``StoreError`` if the target is missing.
     """
     with _session(write=True) as conn:
+        if item.supersedes is not None:
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            _retire_supersede_target(conn, item.supersedes, now)
+            item = item.model_copy(update={"valid_from": now})
         return _insert_memories(conn, [item], "active")[0]
 
 

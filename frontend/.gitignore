@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# OpenAPI schema dump — intermediate for `npm run gen:api`; the generated
+# src/api-types.ts is committed, this is regenerated from the backend on demand.
+openapi.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

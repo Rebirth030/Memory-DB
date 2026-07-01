@@ -34,7 +34,7 @@ async def store_error_handler(request: Request, exc: store.StoreError) -> JSONRe
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
-@app.post("/memories/search")
+@app.post("/memories/search", response_model=list[store.Memory])
 def search_memories(mem_filter: store.MemoryFilter) -> list[dict[str, Any]]:
     """Filter, search and sort memories (any status/sensitivity).
 
@@ -44,42 +44,35 @@ def search_memories(mem_filter: store.MemoryFilter) -> list[dict[str, Any]]:
     return store.list_memories(mem_filter)
 
 
-@app.post("/memories/suggest")
-def suggest_memories(memories: list[store.MemoryInput]) -> list[dict[str, Any]]:
-    """Propose one or more memories as 'candidate' (await review)."""
-    return store.suggest_mem(memories)
-
-
-@app.post("/memories/commit")
+@app.post("/memories/commit", response_model=store.Memory)
 def commit_memory(memory: store.MemoryInput) -> dict[str, Any]:
     """Create a single memory directly as 'active' (no review step)."""
     return store.commit_active(memory)
 
 
-@app.post("/memories/review")
+@app.post("/memories/review", response_model=list[store.Memory])
 def review_memories(decisions: list[store.Decision]) -> list[dict[str, Any]]:
     """Approve or reject candidates; approving a `supersedes` candidate swaps atomically."""
     return store.review_mem(decisions)
 
 
-@app.get("/memories/facets")
+@app.get("/memories/facets", response_model=store.Facets)
 def get_facets() -> dict[str, list[str]]:
     """Filter options for the UI: status/sensitivity (from schema) + distinct category/type/source."""
     return store.facets()
 
 
-@app.get("/memories/{id}")
+@app.get("/memories/{id}", response_model=store.Memory)
 def get_memory(id: int) -> dict[str, Any]:
     """Fetch one memory by id, in ANY status/sensitivity. Missing id -> 400."""
     return store.get_one_mem(id)
 
 
-@app.patch("/memories/{id}")
-def update_memory(id: int, memory: dict[str, Any]) -> dict[str, Any]:
-    """Edit content fields of one memory in place.
+@app.patch("/memories/{id}", response_model=store.Memory)
+def update_memory(id: int, patch: store.MemoryUpdate) -> dict[str, Any]:
+    """Edit fields of one memory in place — partial, only the fields sent apply.
 
-    Accepts a partial object; only content fields are allowed (title, body,
-    tags, category, type, confidence, sensitivity, valid_from, valid_to).
-    Unknown fields or a missing id raise a StoreError -> 400.
+    A missing id raises a StoreError -> 400. Setting `supersedes` on an active
+    memory retires the old target (the store performs the swap).
     """
-    return store.update_mem(id, memory)
+    return store.update_mem(id, patch.model_dump(exclude_unset=True))
