@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { type Sensitivity, SENSITIVITIES, TYPES, CATEGORIES } from "../types";
 import { labelCls, inputCls, selectCls } from "../formStyles";
+import { commitMemory } from "../api";
 
 function Add() {
     const navigate = useNavigate();
@@ -13,14 +14,24 @@ function Add() {
     const [sensitivity, setSensitivity] = useState<Sensitivity>("normal");
     const [source, setSource] = useState("chat");
     const [supersedes, setSupersedes] = useState<number | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const canSave = title.trim() !== "" && body.trim() !== "";
+    const canSave = title.trim() !== "" && body.trim() !== "" && !saving;
 
-    const add = () => {
+    const add = async () => {
         if (!canSave) return;
-        // later: POST /memories/commit with this payload, then navigate to the new row
-        // body = { title, body, type, category, tags, sensitivity, source, supersedes }
-        navigate("/browse");
+        setSaving(true);
+        setError(null);
+        try {
+            // POST /memories/commit — creates directly as active; supersedes swap
+            // (if set) happens server-side. The response is the new record.
+            const created = await commitMemory({ title: title.trim(), body: body.trim(), type, category, tags, sensitivity, source, supersedes });
+            navigate(`/memory/${created.id}`);
+        } catch (e) {
+            setError((e as Error).message);
+            setSaving(false);
+        }
     };
 
     return (
@@ -87,11 +98,12 @@ function Add() {
                     disabled={!canSave}
                     className="rounded-lg border border-(--accent) bg-(--accent) px-5.5 py-2.25 text-[13.5px] font-semibold text-white enabled:cursor-pointer disabled:opacity-50"
                 >
-                    Add memory
+                    {saving ? "Adding…" : "Add memory"}
                 </button>
                 <button onClick={() => navigate("/browse")} className="cursor-pointer rounded-lg border border-(--border) bg-(--surface) px-4.5 py-2.25 text-[13.5px] text-(--text2)">
                     Cancel
                 </button>
+                {error && <span className="text-[12.5px] text-(--reject)">{error}</span>}
             </div>
         </div>
     );

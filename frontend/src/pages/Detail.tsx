@@ -2,30 +2,21 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
     type Memory,
+    type MemoryUpdate,
     type EditableField,
+    EDITABLE_FIELDS,
     SENSITIVITIES,
     TYPES,
     CATEGORIES,
     statusStyle,
 } from "../types";
 import { labelCls, inputCls, selectCls } from "../formStyles";
-
-// --- demo data (replace with GET /memories/:id) ---
-const DEMO: Record<number, Memory> = {
-    45: { id: 45, title: "Primary editor is Neovim", body: "Switched to Neovim with the LazyVim config. Expects a terminal-first workflow and modal-editor assumptions.", type: "preference", category: "tech_stack", tags: "#editor #neovim", confidence: 0.8, sensitivity: "normal", source: "chat", status: "candidate", supersedes: 12, reason: null, created_at: "2026-06-24 14:02", updated_at: "2026-06-24 14:02", valid_from: null, valid_to: null },
-    12: { id: 12, title: "Primary editor is VS Code", body: "Daily editor is Visual Studio Code with a Vim keybindings extension and a handful of TS plugins.", type: "preference", category: "tech_stack", tags: "#editor #vscode", confidence: 0.9, sensitivity: "public", source: "chat", status: "superseded", supersedes: null, reason: null, created_at: "2026-02-05 13:10", updated_at: "2026-06-24 14:02", valid_from: "2026-02-05 13:10", valid_to: "2026-06-24 14:02" },
-    8: { id: 8, title: "Primary language is TypeScript", body: "Default to TypeScript for new code. Strong typing preferred over plain JavaScript.", type: "fact", category: "tech_stack", tags: "#typescript", confidence: 1.0, sensitivity: "public", source: "chat", status: "active", supersedes: null, reason: null, created_at: "2026-01-15 14:00", updated_at: "2026-01-15 14:00", valid_from: "2026-01-15 14:00", valid_to: null },
-    31: { id: 31, title: "Personal server SSH access note", body: "Bastion host bastion.home.local, user 'core', connects with the id_personal key (passphrase in 1Password).", type: "fact", category: "general", tags: "#ssh #infra", confidence: 1.0, sensitivity: "secret", source: "chat", status: "active", supersedes: null, reason: null, created_at: "2026-05-02 09:10", updated_at: "2026-05-02 09:10", valid_from: "2026-05-02 09:10", valid_to: null },
-};
-
-function nowStamp() {
-    return new Date().toISOString().slice(0, 16).replace("T", " ");
-}
+import { useAsync } from "../hooks/useAsync";
+import { getMemory, updateMemory } from "../api";
 
 function Detail() {
     // A changing `key` remounts DetailView when the route param changes, so all
-    // state resets cleanly — no setState-in-effect. (With a real backend, GET
-    // /memories/:id would live in a useEffect inside DetailView.)
+    // state (and the fetch) resets cleanly — no setState-in-effect needed.
     const { id } = useParams();
     return <DetailView key={id} memoryId={Number(id)} />;
 }
@@ -33,36 +24,57 @@ function Detail() {
 function DetailView({ memoryId }: { memoryId: number }) {
     const navigate = useNavigate();
 
-    const [memory, setMemory] = useState<Memory | null>(() => DEMO[memoryId] ?? null);
+    // Initial load. After a successful save, `saved` (the PATCH response) takes
+    // over so we show the fresh record without a refetch.
+    const query = useAsync(() => getMemory(memoryId), [memoryId]);
+    const [saved, setSaved] = useState<Memory | null>(null);
+    const memory = saved ?? query.data ?? null;
+
+    // Edit state
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState<Memory | null>(null);
+    const [saveError, setSaveError] = useState<string | null>(null);
 
+    // The memory this one supersedes — fetched only when present, for the link label.
+    const sid = memory?.supersedes ?? null;
+    const oldQuery = useAsync(() => (sid != null ? getMemory(sid) : Promise.resolve(null)), [sid]);
+    const old = oldQuery.data;
+
+    if (query.loading && !memory) {
+        return <div className="mx-auto max-w-195 px-5.5 pt-6.5 text-[13px] text-(--muted)">Loading memory…</div>;
+    }
     if (!memory) {
         return (
             <div className="mx-auto max-w-195 px-5.5 pt-6.5 pb-20">
                 <button onClick={() => navigate(-1)} className="mb-3.5 cursor-pointer text-[13px] text-(--muted)">← back</button>
                 <div className="rounded-xl border border-dashed border-(--border) bg-(--surface) px-5 py-14 text-center text-(--muted)">
-                    Memory #{memoryId} not found.
+                    {query.error ? `Could not load memory #${memoryId}: ${query.error}` : `Memory #${memoryId} not found.`}
                 </div>
             </div>
         );
     }
 
-    // editable fields read from the draft while editing, otherwise from the record
+    // While editing we render from the draft, otherwise from the record.
     const m = editing && draft ? draft : memory;
     const pct = Math.round(m.confidence * 100);
-    // the memory this one supersedes (read-only view links to it). Later: GET it.
-    const sid = memory.supersedes;
-    const old = sid != null ? DEMO[sid] : undefined;
 
-    const startEdit = () => { setDraft(memory); setEditing(true); };
-    const cancel = () => { setDraft(null); setEditing(false); };
-    const save = () => {
+    const startEdit = () => { setDraft(memory); setSaveError(null); setEditing(true); };
+    const cancel = () => { setDraft(null); setSaveError(null); setEditing(false); };
+    const save = async () => {
         if (!draft) return;
-        // later: PATCH /memories/:id with the changed fields, then use the response
-        setMemory({ ...draft, updated_at: nowStamp() });
-        setDraft(null);
-        setEditing(false);
+        // Send only the fields that actually changed — a real partial PATCH.
+        const patch: MemoryUpdate = {};
+        for (const k of EDITABLE_FIELDS) {
+            if (draft[k] !== memory[k]) (patch as Record<EditableField, unknown>)[k] = draft[k];
+        }
+        if (Object.keys(patch).length === 0) { cancel(); return; }  // nothing changed
+        try {
+            setSaved(await updateMemory(memoryId, patch));  // response = fresh record
+            setDraft(null);
+            setEditing(false);
+        } catch (e) {
+            setSaveError((e as Error).message);
+        }
     };
     const setField = <K extends EditableField>(k: K, v: Memory[K]) =>
         setDraft((d) => (d ? { ...d, [k]: v } : d));
@@ -189,6 +201,7 @@ function DetailView({ memoryId }: { memoryId: number }) {
                 ) : (
                     <button onClick={startEdit} className="cursor-pointer rounded-lg border border-(--accent) bg-(--accent) px-5.5 py-2.25 text-[13.5px] font-semibold text-white">✎ Edit</button>
                 )}
+                {saveError && <span className="text-[12.5px] text-(--reject)">{saveError}</span>}
             </div>
         </div>
     );

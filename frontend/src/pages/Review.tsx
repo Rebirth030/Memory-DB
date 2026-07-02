@@ -1,32 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { Sensitivity } from "../types";
+import { type Memory, isSecret } from "../types";
 import { Lock } from "../ui";
-
-interface Candidate {
-    id: number;
-    title: string;
-    body: string;
-    type: string;
-    category: string;
-    tags: string;
-    confidence: number;
-    sensitivity: Sensitivity;
-    source: string;
-    supersedes: number | null;
-}
-
-// --- demo data (replace with POST /memories/search {choices:{status:['candidate']}}) ---
-const CANDIDATES: Candidate[] = [
-    { id: 45, title: "Primary editor is Neovim", body: "Switched to Neovim with the LazyVim config. Expects a terminal-first workflow and modal-editor assumptions.", type: "preference", category: "tech_stack", tags: "#editor #neovim", confidence: 0.8, sensitivity: "normal", source: "chat", supersedes: 12 },
-    { id: 46, title: "Prefers tabs over spaces in code", body: "Uses tab indentation rather than spaces; expects editor config and formatters to follow suit across projects.", type: "preference", category: "tech_stack", tags: "#tabs #formatting", confidence: 0.7, sensitivity: "normal", source: "chat", supersedes: null },
-    { id: 47, title: "Home address", body: "48 Rue des Lilas, 75011 Paris, France. 3rd floor, door code 4821B.", type: "fact", category: "general", tags: "#address", confidence: 1.0, sensitivity: "secret", source: "chat", supersedes: null },
-    { id: 48, title: "Allergic to penicillin", body: "Documented penicillin allergy — avoid any medical or dosage suggestions involving it.", type: "fact", category: "general", tags: "#health", confidence: 1.0, sensitivity: "sensitive", source: "chat", supersedes: null },
-];
-// the active memories a `supersedes` candidate would replace (for the diff)
-const OLD: Record<number, { title: string; body: string }> = {
-    12: { title: "Primary editor is VS Code", body: "Daily editor is Visual Studio Code with a Vim keybindings extension and a handful of TS plugins." },
-};
+import { useAsync } from "../hooks/useAsync";
+import { getMemory, reviewMemory, searchMemories } from "../api";
 
 const SHORTCUTS = [
     { k: "A", label: "approve" },
@@ -38,8 +15,21 @@ const SHORTCUTS = [
 function Review() {
     const navigate = useNavigate();
 
-    // phase: drive from the real fetch later (loading → ready / error)
-    const [phase] = useState<"loading" | "error" | "ready">("ready");
+    // The candidate queue. `reloadKey` lets the Retry button re-run the fetch.
+    const [reloadKey, setReloadKey] = useState(0);
+    const query = useAsync(() => searchMemories({ choices: { status: ["candidate"] } }), [reloadKey]);
+    // memoised so its reference is stable across renders (it feeds the keyboard
+    // effect's dep array) — only changes when the fetched data actually changes.
+    const candidates = useMemo(() => query.data ?? [], [query.data]);
+
+    // Fetch the active memories that `supersedes` candidates would replace, for the
+    // diff. Keyed on the set of ids so it only re-runs when that set changes.
+    const supersedeIds = [...new Set(candidates.map((c) => c.supersedes).filter((x): x is number => x != null))];
+    const oldQuery = useAsync(() => Promise.all(supersedeIds.map(getMemory)), [supersedeIds.join(",")]);
+    const oldById: Record<number, Memory> = {};
+    for (const m of oldQuery.data ?? []) oldById[m.id] = m;
+
+    // Local review state (decisions are applied optimistically; the queue hides them)
     const [decided, setDecided] = useState<Record<number, "approved" | "rejected">>({});
     const [selected, setSelected] = useState<number[]>([]);
     const [expanded, setExpanded] = useState<number[]>([]);
@@ -47,42 +37,53 @@ function Review() {
     const [rejecting, setRejecting] = useState<number | null>(null);
     const [rejectReason, setRejectReason] = useState("");
     const [cursor, setCursor] = useState(0);
+    const [actionError, setActionError] = useState<string | null>(null);
 
-    const queue = CANDIDATES.filter((c) => !decided[c.id]);
+    const queue = candidates.filter((c) => !decided[c.id]);
     const cur = Math.max(0, Math.min(cursor, queue.length - 1));
+
+    // The single persistence path for approve/reject (single item or bulk).
+    // Optimistic: mark decided (removes from queue) → POST /memories/review → on
+    // failure, roll the marks back and surface the error.
+    const decide = useCallback(async (ids: number[], approve: boolean, reason?: string | null) => {
+        if (ids.length === 0) return;
+        const outcome = approve ? "approved" : "rejected";
+        setDecided((d) => { const n = { ...d }; ids.forEach((i) => (n[i] = outcome)); return n; });
+        setSelected((s) => s.filter((x) => !ids.includes(x)));
+        setActionError(null);
+        try {
+            await reviewMemory(ids.map((id) => ({ id, approve, reason: reason ?? null })));
+        } catch (e) {
+            setDecided((d) => { const n = { ...d }; ids.forEach((i) => delete n[i]); return n; });
+            setActionError((e as Error).message);
+        }
+    }, []);
 
     // keyboard navigation (j/k move, a approve, r reject, e edit, esc cancel)
     useEffect(() => {
         function onKey(e: KeyboardEvent) {
             const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
             if (tag === "input" || tag === "textarea" || tag === "select") return;
-            const q = CANDIDATES.filter((c) => !decided[c.id]);
+            const q = candidates.filter((c) => !decided[c.id]);
             if (!q.length) return;
             const c = Math.max(0, Math.min(cursor, q.length - 1));
             const k = e.key.toLowerCase();
             if (k === "j") { setCursor(Math.min(c + 1, q.length - 1)); e.preventDefault(); }
             else if (k === "k") { setCursor(Math.max(c - 1, 0)); e.preventDefault(); }
-            else if (k === "a") { setDecided((d) => ({ ...d, [q[c].id]: "approved" })); setSelected((s) => s.filter((x) => x !== q[c].id)); e.preventDefault(); }
+            else if (k === "a") { void decide([q[c].id], true); e.preventDefault(); }
             else if (k === "r") { setRejecting(q[c].id); setRejectReason(""); e.preventDefault(); }
             else if (k === "e") { navigate(`/memory/${q[c].id}`); e.preventDefault(); }
             else if (k === "escape") { setRejecting(null); }
         }
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [decided, cursor, navigate]);
+    }, [candidates, decided, cursor, decide, navigate]);
 
-    const approve = (id: number) => {
-        setDecided((d) => ({ ...d, [id]: "approved" }));
-        setSelected((s) => s.filter((x) => x !== id));
-    };
-    const confirmReject = (id: number) => {
-        setDecided((d) => ({ ...d, [id]: "rejected" }));
-        setRejecting(null);
-        setSelected((s) => s.filter((x) => x !== id));
-    };
+    const confirmReject = (id: number) => { void decide([id], false, rejectReason); setRejecting(null); };
     const toggle = (list: number[], id: number) =>
         list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 
+    const ready = !query.loading && !query.error;
     const candidateBadge = { color: "var(--cand)", background: "var(--cand-bg)", borderColor: "var(--accent-border)" };
 
     return (
@@ -95,7 +96,14 @@ function Review() {
                 </div>
             </div>
 
-            {phase === "loading" && (
+            {actionError && (
+                <div className="mb-3.5 flex items-center gap-2.5 rounded-[10px] border border-(--reject) bg-(--reject-bg) px-3.5 py-2.25 text-[13px] text-(--reject)">
+                    <span className="font-semibold">Review failed:</span> {actionError}
+                    <button onClick={() => setActionError(null)} className="ml-auto cursor-pointer text-[12.5px] text-(--muted)">dismiss</button>
+                </div>
+            )}
+
+            {query.loading && (
                 <div className="flex flex-col gap-3">
                     {[0, 1, 2].map((i) => (
                         <div key={i} className="h-26 animate-pulse rounded-[12px] border border-(--line) bg-(--surface)" />
@@ -104,20 +112,20 @@ function Review() {
                 </div>
             )}
 
-            {phase === "error" && (
+            {query.error && (
                 <div className="rounded-[14px] border border-(--reject) bg-(--reject-bg) px-5 py-13 text-center">
                     <div className="mx-auto mb-3.5 flex size-13 items-center justify-center rounded-full border-2 border-(--reject) text-[26px] font-bold text-(--reject)">!</div>
-                    <div className="text-[18px] font-semibold">Couldn’t reach the API</div>
+                    <div className="text-[18px] font-semibold">Couldn’t load candidates</div>
                     <div className="mt-1.5 text-[13.5px] text-(--text2)">
-                        Is the FastAPI server running on <span className="font-mono text-[12.5px] text-(--text)">127.0.0.1:8000</span>?
+                        {query.error} — is the API running on <span className="font-mono text-[12.5px] text-(--text)">127.0.0.1:8000</span>?
                     </div>
-                    <button className="mt-4.5 cursor-pointer rounded-lg border border-(--border) bg-(--surface) px-5 py-2 text-[13px] font-medium text-(--text)">
+                    <button onClick={() => setReloadKey((k) => k + 1)} className="mt-4.5 cursor-pointer rounded-lg border border-(--border) bg-(--surface) px-5 py-2 text-[13px] font-medium text-(--text)">
                         ↻ Retry
                     </button>
                 </div>
             )}
 
-            {phase === "ready" && queue.length === 0 && (
+            {ready && queue.length === 0 && (
                 <div className="rounded-[14px] border border-dashed border-(--border) bg-(--surface) px-5 py-16 text-center">
                     <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full border-2 border-(--active) text-[28px] text-(--active)">✓</div>
                     <div className="text-[19px] font-semibold">Queue clear</div>
@@ -133,7 +141,7 @@ function Review() {
                 </div>
             )}
 
-            {phase === "ready" && queue.length > 0 && (
+            {ready && queue.length > 0 && (
                 <>
                     {/* keyboard hint bar */}
                     <div className="mt-3.5 mb-4 flex flex-wrap items-center gap-4 rounded-[10px] border border-(--line) bg-(--surface) px-3.5 py-2.25 text-[12.5px] text-(--text2)">
@@ -152,11 +160,11 @@ function Review() {
                             <span className="font-semibold">{selected.length} selected</span>
                             <div className="flex-1" />
                             <button
-                                onClick={() => { setDecided((d) => { const n = { ...d }; selected.forEach((i) => (n[i] = "approved")); return n; }); setSelected([]); }}
+                                onClick={() => void decide(selected, true)}
                                 className="cursor-pointer rounded-[7px] border border-(--active) bg-(--active-bg) px-3.25 py-1.25 text-[12.5px] font-semibold text-(--active)"
                             >✓ Approve selected</button>
                             <button
-                                onClick={() => { setDecided((d) => { const n = { ...d }; selected.forEach((i) => (n[i] = "rejected")); return n; }); setSelected([]); }}
+                                onClick={() => void decide(selected, false)}
                                 className="cursor-pointer rounded-[7px] border border-(--reject) bg-(--reject-bg) px-3.25 py-1.25 text-[12.5px] font-semibold text-(--reject)"
                             >✕ Reject selected</button>
                             <button onClick={() => setSelected([])} className="cursor-pointer text-[12.5px] text-(--muted)">clear</button>
@@ -166,11 +174,11 @@ function Review() {
                     {/* queue */}
                     <div className="flex flex-col gap-3">
                         {queue.map((q, i) => {
-                            const secret = q.sensitivity === "secret" || q.sensitivity === "sensitive";
+                            const secret = isSecret(q.sensitivity);
                             const shown = !secret || revealed.includes(q.id);
                             const isCursor = i === cur;
                             const sel = selected.includes(q.id);
-                            const old = q.supersedes != null ? OLD[q.supersedes] : null;
+                            const old = q.supersedes != null ? oldById[q.supersedes] : null;
                             const exp = expanded.includes(q.id);
                             const confPct = Math.round(q.confidence * 100);
                             return (
@@ -272,7 +280,7 @@ function Review() {
                                     </div>
                                     {/* action rail */}
                                     <div className="flex w-27 flex-none flex-col border-l border-(--line)">
-                                        <button onClick={() => approve(q.id)} className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-0.75 border-b border-(--line) text-[13px] font-semibold text-(--active)">
+                                        <button onClick={() => void decide([q.id], true)} className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-0.75 border-b border-(--line) text-[13px] font-semibold text-(--active)">
                                             <span className="text-[15px]">✓</span>{q.supersedes != null ? "Approve & swap" : "Approve"}
                                             <kbd className="rounded-[4px] border border-(--border) px-1.25 font-mono text-[10px] font-normal text-(--muted)">A</kbd>
                                         </button>

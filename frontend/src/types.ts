@@ -21,22 +21,24 @@ export type Facets = Schemas["Facets"];
 export type Sensitivity = Memory["sensitivity"];
 export type Status = Memory["status"];
 export type FacetKey = keyof Facets;
-export type OrderBy = MemoryFilter["order_by"];
 
 // --------------------------------------------------------------------------- //
 // UI-only (not part of the API) — hand-written
 // --------------------------------------------------------------------------- //
 
-// Fields editable on the detail page — match the store's _UPDATABLE allowlist.
-// Setting `supersedes` on an active memory retires the old target server-side
-// (update_mem performs the swap). status / id / source / timestamps stay
-// read-only — status changes via review.
-export type EditableField =
-    | "title" | "body" | "type" | "category" | "tags"
-    | "confidence" | "sensitivity" | "valid_from" | "valid_to" | "supersedes";
+// Fields editable on the detail page — this single list drives both the runtime
+// diff (Detail's PATCH) and the EditableField type. Matches the store's
+// _UPDATABLE allowlist. Setting `supersedes` on an active memory retires the old
+// target server-side (update_mem performs the swap). status / id / source /
+// timestamps stay read-only — status changes via review.
+export const EDITABLE_FIELDS = [
+    "title", "body", "type", "category", "tags",
+    "confidence", "sensitivity", "valid_from", "valid_to", "supersedes",
+] as const;
+export type EditableField = (typeof EDITABLE_FIELDS)[number];
 
-// Option lists for the selects. category/type/source can also come from GET
-// /memories/facets at runtime; these are the static fallbacks.
+// Option lists for the Add / Detail form selects — the full allowlist, so you
+// can pick any value (Browse's filter dropdowns come from /memories/facets).
 export const SENSITIVITIES: Sensitivity[] = ["public", "normal", "private", "sensitive", "secret"];
 export const TYPES: string[] = ["preference", "fact", "goal", "project", "environment", "note"];
 export const CATEGORIES: string[] = [
@@ -45,7 +47,7 @@ export const CATEGORIES: string[] = [
 ];
 
 // status -> [foreground var, background var]
-export const STATUS_VARS: Record<Status, [string, string]> = {
+const STATUS_VARS: Record<Status, [string, string]> = {
     candidate: ["--cand", "--cand-bg"],
     active: ["--active", "--active-bg"],
     superseded: ["--super", "--super-bg"],
@@ -56,3 +58,9 @@ export function statusStyle(s: Status) {
     const [fg, bg] = STATUS_VARS[s];
     return { color: `var(${fg})`, background: `var(${bg})`, borderColor: `var(${fg})` };
 }
+
+// "secret" and "sensitive" are both hidden behind a padlock in the UI.
+export const isSecret = (s: Sensitivity) => s === "secret" || s === "sensitive";
+
+// superseded and rejected memories are shown faded / struck through.
+export const isFaded = (s: Status) => s === "superseded" || s === "rejected";

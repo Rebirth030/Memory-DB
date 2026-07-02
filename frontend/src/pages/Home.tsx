@@ -1,48 +1,58 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { type Status, statusStyle } from "../types";
+import { isFaded, isSecret, statusStyle } from "../types";
 import { Lock } from "../ui";
-
-// --- demo data (replace with API calls later) ---
-const RECENT: { id: number; title: string; status: Status; date: string; secret: boolean }[] = [
-    { id: 8, title: "Primary language is TypeScript", status: "active", date: "Jan 15", secret: false },
-    { id: 3, title: "Ship Memory DB v1 by Q3", status: "active", date: "Feb 11", secret: false },
-    { id: 31, title: "Personal server SSH access note", status: "active", date: "May 2", secret: true },
-    { id: 12, title: "Primary editor is VS Code", status: "superseded", date: "Jun 24", secret: false },
-    { id: 5, title: "Avoid emoji in code comments", status: "active", date: "Mar 2", secret: false },
-];
-const BY_CATEGORY: { name: string; count: number }[] = [
-    { name: "tech_stack", count: 3 },
-    { name: "communication", count: 2 },
-    { name: "general", count: 2 },
-    { name: "work", count: 1 },
-    { name: "hardware", count: 1 },
-];
+import { fmtDate } from "../format";
+import { useAsync } from "../hooks/useAsync";
+import { searchMemories } from "../api";
 
 function Home() {
-    const today = new Date().toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-    });
-    const hour = new Date().getHours();
-    const greeting =
-        hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-
-    // placeholder values — wire these to GET /memories/facets + search counts later
-    const [openReviews] = useState(0);
-    const [activeMemories] = useState(4);
-    const [secretMemories] = useState(6);
-    const [totalMemories] = useState(10);
     const navigate = useNavigate();
+    const { data, loading, error } = useAsync(() => searchMemories(), []);
 
-    const catMax = Math.max(1, ...BY_CATEGORY.map((c) => c.count));
+    const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
+    if (loading) {
+        return <div className="mx-auto max-w-310 px-5.5 pt-6.5 text-[13px] text-(--muted)">Loading…</div>;
+    }
+    if (error) {
+        return (
+            <div className="mx-auto max-w-310 px-5.5 pt-6.5">
+                <div className="rounded-[12px] border border-(--reject) bg-(--reject-bg) px-4 py-3 text-[13px] text-(--reject)">
+                    Failed to load: {error}
+                </div>
+            </div>
+        );
+    }
+
+    const memories = data ?? [];
+
+    // derive every dashboard number from the single fetch
+    const total = memories.length;
+    const active = memories.filter((m) => m.status === "active").length;
+    const candidates = memories.filter((m) => m.status === "candidate").length;
+    const secret = memories.filter((m) => isSecret(m.sensitivity)).length;
+
+    const recent = [...memories]
+        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+        .slice(0, 5);
+
+    const counts = memories.reduce<Record<string, number>>((acc, m) => {
+        acc[m.category] = (acc[m.category] ?? 0) + 1;
+        return acc;
+    }, {});
+    const byCategory = Object.entries(counts)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 6);
+    const catMax = Math.max(1, ...byCategory.map((c) => c.count));
 
     const stats = [
-        { value: activeMemories, label: "Active memories", color: "var(--active)", lock: false, go: () => navigate("/browse") },
-        { value: openReviews, label: "Pending review", color: openReviews > 0 ? "var(--accent)" : "var(--text2)", lock: false, go: () => navigate("/review") },
-        { value: secretMemories, label: "Secret / sensitive", color: "var(--lockfg)", lock: true, go: () => navigate("/browse") },
-        { value: totalMemories, label: "Total in library", color: "var(--text)", lock: false, go: () => navigate("/browse") },
+        { value: active, label: "Active memories", color: "var(--active)", lock: false, go: () => navigate("/browse") },
+        { value: candidates, label: "Pending review", color: candidates > 0 ? "var(--accent)" : "var(--text2)", lock: false, go: () => navigate("/review") },
+        { value: secret, label: "Secret / sensitive", color: "var(--lockfg)", lock: true, go: () => navigate("/browse") },
+        { value: total, label: "Total in library", color: "var(--text)", lock: false, go: () => navigate("/browse") },
     ];
 
     return (
@@ -56,8 +66,8 @@ function Home() {
                     {greeting}.
                 </h1>
                 <p className="mt-1.25 text-[14px] text-(--text2)">
-                    {openReviews > 0
-                        ? `You have ${openReviews} ${openReviews === 1 ? "memory" : "memories"} waiting for review.`
+                    {candidates > 0
+                        ? `You have ${candidates} ${candidates === 1 ? "memory" : "memories"} waiting for review.`
                         : "Everything is reviewed — your knowledge base is up to date."}
                 </p>
             </div>
@@ -68,14 +78,14 @@ function Home() {
                 className="flex w-full cursor-pointer items-center gap-5 rounded-2xl border border-(--accent-border) bg-(--accent-bg) px-6 py-5.5 text-left shadow-(--shadow)"
             >
                 <div className="flex size-15 flex-none items-center justify-center rounded-[14px] bg-(--accent) font-mono text-[26px] font-semibold text-white">
-                    {openReviews}
+                    {candidates}
                 </div>
                 <div className="min-w-0 flex-1">
                     <div className="text-[18px] font-semibold text-(--text)">
                         Review queue
                     </div>
                     <div className="mt-0.75 text-[13.5px] text-(--text2)">
-                        New candidates proposed by Claude &amp; Codex are waiting.
+                        New candidates proposed by Claude.
                     </div>
                 </div>
                 <span className="flex flex-none items-center gap-2 text-[13px] font-semibold text-(--accent)">
@@ -115,8 +125,9 @@ function Home() {
                             all &rarr;
                         </button>
                     </div>
-                    {RECENT.map((r) => {
-                        const faded = r.status === "superseded" || r.status === "rejected";
+                    {recent.map((r) => {
+                        const faded = isFaded(r.status);
+                        const secret = isSecret(r.sensitivity);
                         return (
                             <button
                                 key={r.id}
@@ -127,7 +138,7 @@ function Home() {
                                     #{r.id}
                                 </span>
                                 <span className="flex min-w-0 flex-1 items-center gap-1.75 overflow-hidden">
-                                    {r.secret && <Lock />}
+                                    {secret && <Lock />}
                                     <span
                                         className="truncate text-[13.5px] font-medium"
                                         style={{ color: faded ? "var(--text2)" : "var(--text)" }}
@@ -142,11 +153,14 @@ function Home() {
                                     {r.status}
                                 </span>
                                 <span className="w-13.5 flex-none text-right font-mono text-[11px] text-(--muted)">
-                                    {r.date}
+                                    {fmtDate(r.updated_at)}
                                 </span>
                             </button>
                         );
                     })}
+                    {recent.length === 0 && (
+                        <div className="px-3.25 py-6 text-center text-[12.5px] text-(--muted)">No memories yet.</div>
+                    )}
                 </div>
 
                 {/* by category + add */}
@@ -154,7 +168,7 @@ function Home() {
                     <div className="rounded-[13px] border border-(--border) bg-(--surface) px-4 py-3.5">
                         <div className="mb-3 text-[13px] font-semibold">By category</div>
                         <div className="flex flex-col gap-2.5">
-                            {BY_CATEGORY.map((c) => (
+                            {byCategory.map((c) => (
                                 <button
                                     key={c.name}
                                     onClick={() => navigate("/browse")}

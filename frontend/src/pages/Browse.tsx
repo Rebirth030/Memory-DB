@@ -1,67 +1,56 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { type FacetKey, type Memory, type Status, SENSITIVITIES, statusStyle } from "../types";
+import { type FacetKey, type Memory, isFaded, isSecret, statusStyle } from "../types";
 import { Lock, SearchIcon } from "../ui";
 import { fmt } from "../format";
-
-// --- demo data (replace with POST /memories/search) ---
-const MEMORIES: Memory[] = [
-    { id: 1, title: "Prefers concise, direct answers", body: "Wants replies kept short. Lead with the answer.", type: "preference", category: "communication", tags: "#tone", confidence: 0.95, sensitivity: "normal", source: "chat", status: "active", supersedes: null, reason: null, created_at: "2026-04-18 11:30", updated_at: "2026-04-18 11:30", valid_from: "2026-04-18 11:30", valid_to: null },
-    { id: 3, title: "Ship Memory DB v1 by Q3", body: "Personal goal: usable v1 of the memory DB before end of Q3 2026.", type: "goal", category: "work", tags: "#roadmap", confidence: 0.8, sensitivity: "private", source: "chat", status: "active", supersedes: null, reason: null, created_at: "2026-02-11 08:05", updated_at: "2026-02-11 08:05", valid_from: "2026-02-11 08:05", valid_to: null },
-    { id: 8, title: "Primary language is TypeScript", body: "Default to TypeScript for new code.", type: "fact", category: "tech_stack", tags: "#typescript", confidence: 1.0, sensitivity: "public", source: "chat", status: "active", supersedes: null, reason: null, created_at: "2026-01-15 14:00", updated_at: "2026-01-15 14:00", valid_from: "2026-01-15 14:00", valid_to: null },
-    { id: 12, title: "Primary editor is VS Code", body: "Daily editor is VS Code with a Vim extension.", type: "preference", category: "tech_stack", tags: "#editor", confidence: 0.9, sensitivity: "public", source: "chat", status: "superseded", supersedes: null, reason: null, created_at: "2026-02-05 13:10", updated_at: "2026-06-24 14:02", valid_from: "2026-02-05 13:10", valid_to: "2026-06-24 14:02" },
-    { id: 29, title: "Likes loud notification sounds", body: "Prefers loud audible notifications.", type: "preference", category: "general", tags: "#notifications", confidence: 0.6, sensitivity: "normal", source: "chat", status: "rejected", supersedes: null, reason: "Incorrect — keeps notifications silent.", created_at: "2026-03-30 16:44", updated_at: "2026-03-30 16:44", valid_from: "2026-03-30 16:44", valid_to: null },
-    { id: 31, title: "Personal server SSH access note", body: "Bastion host, user 'core', id_personal key.", type: "fact", category: "general", tags: "#ssh", confidence: 1.0, sensitivity: "secret", source: "chat", status: "active", supersedes: null, reason: null, created_at: "2026-05-02 09:10", updated_at: "2026-05-02 09:10", valid_from: "2026-05-02 09:10", valid_to: null },
-    { id: 45, title: "Primary editor is Neovim", body: "Switched to Neovim with LazyVim.", type: "preference", category: "tech_stack", tags: "#editor #neovim", confidence: 0.8, sensitivity: "normal", source: "chat", status: "candidate", supersedes: 12, reason: null, created_at: "2026-06-24 14:02", updated_at: "2026-06-24 14:02", valid_from: null, valid_to: null },
-    { id: 48, title: "Allergic to penicillin", body: "Documented penicillin allergy.", type: "fact", category: "general", tags: "#health", confidence: 1.0, sensitivity: "sensitive", source: "chat", status: "candidate", supersedes: null, reason: null, created_at: "2026-06-22 08:30", updated_at: "2026-06-22 08:30", valid_from: null, valid_to: null },
-];
+import { useAsync } from "../hooks/useAsync";
+import { getFacets, searchMemories } from "../api";
 
 const FACET_KEYS: FacetKey[] = ["status", "sensitivity", "category", "type", "source"];
 const FACET_LABELS: Record<FacetKey, string> = { status: "Status", sensitivity: "Sensitivity", category: "Category", type: "Type", source: "Source" };
-const STATUS_OPTS: Status[] = ["candidate", "active", "superseded", "rejected"];
 const SORT_FIELDS: [keyof Memory, string][] = [
     ["updated_at", "Updated"], ["created_at", "Created"], ["title", "Title"],
     ["confidence", "Confidence"], ["type", "Type"], ["status", "Status"],
 ];
-
-function distinct(col: keyof Memory): string[] {
-    const seen = new Set<string>();
-    MEMORIES.forEach((m) => seen.add(String(m[col])));
-    return [...seen].sort();
-}
 
 type Filters = Record<FacetKey, string[]>;
 const EMPTY: Filters = { status: [], sensitivity: [], category: [], type: [], source: [] };
 
 function Browse() {
     const navigate = useNavigate();
+
+    // Server data, fetched ONCE on mount. Everything below (search/filter/sort)
+    // runs client-side over this list — the store is small & local, so that's
+    // instant and avoids a roundtrip per keystroke. The facet options come from
+    // GET /memories/facets so the dropdowns always show the FULL range of values,
+    // independent of what is currently filtered in.
+    const memoriesQuery = useAsync(() => searchMemories(), []);
+    const facetsQuery = useAsync(() => getFacets(), []);
+    const memories = memoriesQuery.data ?? [];
+    const facetData: Filters = facetsQuery.data ?? EMPTY;
+
+    // UI state
     const [search, setSearch] = useState("");
     const [filters, setFilters] = useState<Filters>(EMPTY);
     const [sort, setSort] = useState<{ by: keyof Memory; desc: boolean }>({ by: "updated_at", desc: true });
     const [openFacet, setOpenFacet] = useState<string | null>(null);
 
-    const facetData: Record<FacetKey, string[]> = {
-        status: STATUS_OPTS, sensitivity: SENSITIVITIES,
-        category: distinct("category"), type: distinct("type"), source: distinct("source"),
-    };
-
-    // filter + search
+    // client-side filter: facet checkboxes (AND across facets) + free-text over title/body/tags
     const q = search.trim().toLowerCase();
-    const filtered = MEMORIES.filter((m) => {
+    const filtered = memories.filter((m) => {
         for (const k of FACET_KEYS) {
             if (filters[k].length && !filters[k].includes(String(m[k]))) return false;
         }
-        if (q && !`${m.title} ${m.body} ${m.tags}`.toLowerCase().includes(q)) return false;
-        return true;
+        return !q || `${m.title} ${m.body} ${m.tags}`.toLowerCase().includes(q);
     });
 
-    // sort
+    // client-side sort
     const by = sort.by;
-    const rows = [...filtered].sort((a, b) => {
-        if (by === "confidence") return a.confidence - b.confidence;
-        const x = String(a[by] ?? ""), y = String(b[by] ?? "");
-        return x < y ? -1 : x > y ? 1 : 0;
-    });
+    const rows = [...filtered].sort((a, b) =>
+        by === "confidence"
+            ? a.confidence - b.confidence
+            : String(a[by] ?? "").localeCompare(String(b[by] ?? "")),
+    );
     if (sort.desc) rows.reverse();
 
     const toggleFacet = (k: string) => setOpenFacet((o) => (o === k ? null : k));
@@ -74,6 +63,19 @@ function Browse() {
     const chips = FACET_KEYS.flatMap((k) => filters[k].map((v) => ({ k, v })));
     const sortLabel = SORT_FIELDS.find(([f]) => f === sort.by)?.[1] ?? "";
 
+    if (memoriesQuery.loading) {
+        return <div className="mx-auto max-w-310 px-5.5 pt-6.5 text-[13px] text-(--muted)">Loading memories…</div>;
+    }
+    if (memoriesQuery.error) {
+        return (
+            <div className="mx-auto max-w-310 px-5.5 pt-6.5">
+                <div className="rounded-[12px] border border-(--reject) bg-(--reject-bg) px-4 py-3 text-[13px] text-(--reject)">
+                    Failed to load memories: {memoriesQuery.error}
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="mx-auto max-w-310 px-5.5 pt-6.5 pb-20">
             {/* header */}
@@ -82,7 +84,7 @@ function Browse() {
                     <h1 className="text-[25px] font-semibold tracking-[-0.4px]">Library</h1>
                     <div className="mt-0.75 text-[13px] text-(--muted)">All memories — every status &amp; sensitivity, including secrets.</div>
                 </div>
-                <div className="font-mono text-[12px] text-(--muted)">{rows.length} / {MEMORIES.length} shown</div>
+                <div className="font-mono text-[12px] text-(--muted)">{rows.length} / {memories.length} shown</div>
             </div>
 
             {/* search */}
@@ -125,6 +127,7 @@ function Browse() {
                                             </button>
                                         );
                                     })}
+                                    {facetData[k].length === 0 && <div className="px-2.25 py-1.75 text-[12px] text-(--muted)">no options</div>}
                                 </div>
                             )}
                         </div>
@@ -175,8 +178,8 @@ function Browse() {
                     <span className="w-27 flex-none">UPDATED</span>
                 </div>
                 {rows.map((m) => {
-                    const faded = m.status === "superseded" || m.status === "rejected";
-                    const secret = m.sensitivity === "secret" || m.sensitivity === "sensitive";
+                    const faded = isFaded(m.status);
+                    const secret = isSecret(m.sensitivity);
                     const pct = Math.round(m.confidence * 100);
                     return (
                         <button
