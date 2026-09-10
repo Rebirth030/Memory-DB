@@ -18,7 +18,7 @@ token-efficient memory they can query on demand instead of being re-told context
 | Domain layer / store | All SQLite logic, Pydantic models, `StoreError`, `_session`. No transport deps. | `personal_mem_store.py` |
 | MCP server | Thin FastMCP wrappers; LLM docstrings/governance; `StoreError`→`ToolError`. | `personal_mem_mcp.py` |
 | Web API (transport 2) | Thin FastAPI JSON layer; `StoreError`→HTTP 400; localhost admin. | `api/app.py` |
-| Web UI (in progress) | React + TypeScript + Vite SPA; calls the API; localhost only. | `frontend/` |
+| Web UI | React + TypeScript + Vite SPA; calls the API; localhost only. | `frontend/` |
 | Schema init | Creates `memories` table, `memories_fts` (FTS5), and the sync triggers. | `memory_init.py` |
 | Tests + seeds | Anonymous sample seeds + 17-test suite on throwaway DB copies. | `personal_mem_test.py` |
 

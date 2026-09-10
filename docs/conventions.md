@@ -54,29 +54,34 @@
 ## Key Commands
 
 ```bash
-# Run the test suite (17 tests, on throwaway DB copies)
-.venv/Scripts/python.exe personal_mem_test.py
-.venv/Scripts/python.exe -m pytest personal_mem_test.py
+# Run the test suite (22 tests, on throwaway DB copies)
+uv run python personal_mem_test.py
+uv run python -m pytest personal_mem_test.py
 
 # (Re)create the schema
-.venv/Scripts/python.exe memory_init.py
+uv run python memory_init.py
 
 # Seed anonymous demo memories into the active DB (idempotent)
-.venv/Scripts/python.exe -c "import personal_mem_test as t; print(len(t.seed_into_db()))"
+uv run python -c "import personal_mem_test as t; print(len(t.seed_into_db()))"
 
 # Run the web API (FastAPI, localhost; docs at /docs)
-.venv/Scripts/fastapi.exe dev api/app.py
+uv run fastapi dev api/app.py
+
+# Always-on: serve the built SPA from the API itself (see deploy/)
+uv run fastapi run api/app.py --host 127.0.0.1
 
 # Frontend (React + Vite), from frontend/
 cd frontend && npm run dev          # dev server on :5173, proxies /memories → :8000
 
 # Inspect / register the MCP server
-.venv/Scripts/fastmcp.exe dev inspector personal_mem_mcp.py    # browser UI (needs Node)
+uv run fastmcp dev inspector personal_mem_mcp.py    # browser UI (needs Node)
 claude mcp list                                                 # 'personal-mem' is registered
 ```
 
-> Note: `python` is not on PATH — use `.venv/Scripts/python.exe`. The Bash tool
-> here is Git Bash (POSIX), PowerShell is the primary shell.
+> Note: `python` is not on PATH. `uv run python` works on every OS; the direct
+> paths are `uv run python` (Windows) and `.venv/bin/python`
+> (macOS/Linux). On this machine the Bash tool is Git Bash (POSIX), and
+> PowerShell is the primary shell.
 
 ## Gotchas
 
@@ -97,7 +102,7 @@ claude mcp list                                                 # 'personal-mem'
   `suggest_memories` docstring + ADR-001.)
 - Do **not** change the approval flow ([ADR-001](decisions/ADR-001-approval-flow.md)) — it is locked
   (approve/reject/edit are all human-gated).
-- Do **not** expose `list_memories`/`get_one_mem`/`facets` (any all-status or
+- Do **not** expose `list_memories`/`get_one_mem`/`facets`/`purge_mem` (any all-status or
   all-sensitivity read) via MCP — those are the localhost web-API only.
 - Run `personal_mem_test.py` (17 tests) before considering a change done.
 - Keep the codebase free of personal data; seeds stay anonymous.

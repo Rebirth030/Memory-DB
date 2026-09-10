@@ -14,14 +14,14 @@ never touched, and fills it with memories in every lifecycle state:
 
 Build it (from the project root, since `python` is not on PATH):
 
-    .venv/Scripts/python.exe seed_demo.py                  # build ./demo.db fresh
-    .venv/Scripts/python.exe seed_demo.py --db demo.db     # explicit path
-    .venv/Scripts/python.exe seed_demo.py --append         # add to it, don't wipe
+    uv run python seed_demo.py                  # build ./demo.db fresh
+    uv run python seed_demo.py --db demo.db     # explicit path
+    uv run python seed_demo.py --append         # add to it, don't wipe
 
-Then point the API at it and start the web UI (PowerShell):
+Then point the API at it and start the web UI:
 
-    $env:PERSONAL_MEM_DB = "demo.db"
-    .venv/Scripts/python.exe -m fastapi dev api/app.py
+    PERSONAL_MEM_DB=demo.db uv run fastapi dev api/app.py      # macOS/Linux
+    $env:PERSONAL_MEM_DB = "demo.db"; uv run fastapi dev api/app.py   # PowerShell
 
 The persona ("Robin", a fictional indie game developer) is invented for the demo.
 """
@@ -169,9 +169,10 @@ def _print_summary(target: Path) -> None:
     print(f"  {total} memories total")
     for status in ("candidate", "active", "superseded", "rejected"):
         print(f"    {status:<11} {counts.get(status, 0)}")
-    print("\nServe it with the web UI (PowerShell):")
-    print(f'    $env:PERSONAL_MEM_DB = "{target.name}"')
-    print("    .venv/Scripts/python.exe -m fastapi dev api/app.py")
+    print("\nServe it with the web UI:")
+    print(f"    PERSONAL_MEM_DB={target.name} uv run fastapi dev api/app.py")
+    print(f'    $env:PERSONAL_MEM_DB = "{target.name}"; uv run fastapi dev api/app.py'
+          "   # PowerShell")
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ export type MemoryUpdate = Schemas["MemoryUpdate"];
 export type Decision = Schemas["Decision"];
 export type MemoryFilter = Schemas["MemoryFilter"];
 export type Facets = Schemas["Facets"];
+export type PurgeResult = Schemas["PurgeResult"];
 
 // convenience aliases derived from the generated types
 export type Sensitivity = Memory["sensitivity"];

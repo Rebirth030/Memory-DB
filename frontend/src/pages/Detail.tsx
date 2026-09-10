@@ -12,7 +12,7 @@ import {
 } from "../types";
 import { labelCls, inputCls, selectCls } from "../formStyles";
 import { useAsync } from "../hooks/useAsync";
-import { getMemory, updateMemory } from "../api";
+import { getMemory, purgeMemory, updateMemory } from "../api";
 
 function Detail() {
     // A changing `key` remounts DetailView when the route param changes, so all
@@ -34,6 +34,7 @@ function DetailView({ memoryId }: { memoryId: number }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState<Memory | null>(null);
     const [saveError, setSaveError] = useState<string | null>(null);
+    const [confirmDelete, setConfirmDelete] = useState(false);
 
     // The memory this one supersedes — fetched only when present, for the link label.
     const sid = memory?.supersedes ?? null;
@@ -78,6 +79,18 @@ function DetailView({ memoryId }: { memoryId: number }) {
     };
     const setField = <K extends EditableField>(k: K, v: Memory[K]) =>
         setDraft((d) => (d ? { ...d, [k]: v } : d));
+
+    // Unlike reject/supersede (which only move the status), this really removes
+    // the text — so it asks first, and there's nothing to come back to after.
+    const remove = async () => {
+        try {
+            await purgeMemory(memoryId);
+            navigate("/browse");
+        } catch (e) {
+            setSaveError((e as Error).message);
+            setConfirmDelete(false);
+        }
+    };
 
     return (
         <div className="mx-auto max-w-195 px-5.5 pt-6.5 pb-20">
@@ -199,10 +212,28 @@ function DetailView({ memoryId }: { memoryId: number }) {
                         <button onClick={cancel} className="cursor-pointer rounded-lg border border-(--border) bg-(--surface) px-4.5 py-2.25 text-[13.5px] text-(--text2)">Cancel</button>
                     </>
                 ) : (
-                    <button onClick={startEdit} className="cursor-pointer rounded-lg border border-(--accent) bg-(--accent) px-5.5 py-2.25 text-[13.5px] font-semibold text-white">✎ Edit</button>
+                    <>
+                        <button onClick={startEdit} className="cursor-pointer rounded-lg border border-(--accent) bg-(--accent) px-5.5 py-2.25 text-[13.5px] font-semibold text-white">✎ Edit</button>
+                        <div className="flex-1" />
+                        <button onClick={() => setConfirmDelete(true)} className="cursor-pointer text-[12.5px] text-(--muted) hover:text-(--reject)">Delete permanently</button>
+                    </>
                 )}
                 {saveError && <span className="text-[12.5px] text-(--reject)">{saveError}</span>}
             </div>
+
+            {confirmDelete && (
+                <div className="mt-3 rounded-[10px] border border-(--reject) bg-(--reject-bg) px-3.5 py-3">
+                    <div className="text-[13px] font-semibold text-(--reject)">Delete memory #{memory.id} for good?</div>
+                    <div className="mt-1 text-[12.5px] text-(--text2)">
+                        Removes the text from the database and the search index. Rejecting or
+                        superseding only changes the status — this doesn’t. It can’t be undone.
+                    </div>
+                    <div className="mt-2.5 flex gap-2">
+                        <button onClick={remove} className="cursor-pointer rounded-[7px] border border-(--reject) bg-(--reject) px-3.5 py-1.25 text-[12.5px] font-semibold text-white">Delete permanently</button>
+                        <button onClick={() => setConfirmDelete(false)} className="cursor-pointer text-[12.5px] text-(--muted)">Cancel</button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -5,4 +5,7 @@ requires-python = ">=3.14"
 dependencies = [
     "fastmcp>=3.4.2",
     "pydantic>=2.13.4",
+    # Transport 2: the local admin/review API behind the web UI. `[standard]`
+    # pulls in uvicorn + the `fastapi dev` CLI.
+    "fastapi[standard]>=0.115",
 ]

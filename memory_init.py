@@ -2,7 +2,7 @@
 
 Run directly to (re)create ``memory.db`` next to this file::
 
-    .venv/Scripts/python.exe memory_init.py
+    uv run python memory_init.py
 
 Or import ``SCHEMA_SQL`` / ``init_db(path)`` to build the same schema elsewhere
 (e.g. the demo seed builds a throwaway ``demo.db`` this way).

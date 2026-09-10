@@ -9,19 +9,16 @@ Read context files in this order before doing anything else:
 
 1. `CLAUDE.md`
 2. `docs/architecture.md`
-3. `docs/current-goals.md`
-4. `docs/conventions.md`
-5. `docs/todos.md`
-6. `docs/decisions/` (skim README, read relevant ADRs — **ADR-001 is locked**)
-7. `docs/inbox/` (check for unprocessed handoffs)
+3. `docs/conventions.md`
+4. `docs/decisions/` (skim README, read relevant ADRs — **ADR-001 is locked**)
 
 Do not start reading arbitrary source files until you have read these.
 
 ## Project in One Line
 
 A local SQLite + FTS5 personal-memory store exposed to AI assistants via a
-FastMCP server, with a human-approval flow. A localhost FastAPI JSON API exists;
-a React + Vite frontend over it is the current build ([ADR-004](docs/decisions/ADR-004-react-vite-frontend.md)).
+FastMCP server, with a human-approval flow. A localhost FastAPI JSON API and a
+React + Vite frontend provide the review UI ([ADR-004](docs/decisions/ADR-004-react-vite-frontend.md)).
 
 ## Non-Negotiable Rules
 
@@ -35,7 +32,7 @@ a React + Vite frontend over it is the current build ([ADR-004](docs/decisions/A
 - **Keep the store transport-free** (ADR-002): no `fastmcp`/HTTP imports in
   `personal_mem_store.py`. New ops = store function + thin transport wrapper.
 - **Secrets** (ADR-003): writes may use any sensitivity; read tools never return
-  `sensitive`/`secret`. Never expose `list_memories` (all statuses/sensitivities)
+  `sensitive`/`secret`. Never expose `list_memories` (all statuses/sensitivities) or `purge_mem` (permanent deletion — web UI only)
   via MCP.
 - **SQL safety:** bind values; inline only allowlisted identifiers/operators.
 - **No personal data in code** — seeds and tests use anonymous samples.
@@ -49,9 +46,8 @@ a React + Vite frontend over it is the current build ([ADR-004](docs/decisions/A
 
 ## After Changes
 
-- Run the test suite: `.venv/Scripts/python.exe personal_mem_test.py` (17 tests).
+- Run the test suite: `uv run python personal_mem_test.py` (22 tests).
 - Note any permanent architectural decision in `docs/decisions/`.
-- If the session produced useful context, add a handoff to `docs/inbox/`.
 
 ## Security Rules
 
@@ -60,5 +56,6 @@ a React + Vite frontend over it is the current build ([ADR-004](docs/decisions/A
 
 ## Environment Notes
 
-- `python` is not on PATH — use `.venv/Scripts/python.exe`.
+- `python` is not on PATH — use `uv run python` (works on every OS; the direct
+  paths are `.venv/Scripts/python.exe` on Windows, `.venv/bin/python` elsewhere).
 - Managed with **uv**; Python `>=3.14`.

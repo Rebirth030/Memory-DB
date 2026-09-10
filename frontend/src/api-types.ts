@@ -101,7 +101,15 @@ export interface paths {
         get: operations["get_memory_memories__id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Purge Memory
+         * @description Permanently delete one memory — row and search index.
+         *
+         *     Rejecting or superseding only changes a status; the text stays. This is the
+         *     only way to actually remove content, e.g. when something was captured that
+         *     shouldn't have been. Not reachable over MCP — deleting is the human's call.
+         */
+        delete: operations["purge_memory_memories__id__delete"];
         options?: never;
         head?: never;
         /**
@@ -351,6 +359,16 @@ export interface components {
             /** Supersedes */
             supersedes?: number | null;
         };
+        /**
+         * PurgeResult
+         * @description What `purge_mem` removed — the deleted row, plus how many memories had
+         *     their `supersedes` pointer cleared because it referenced it.
+         */
+        PurgeResult: {
+            deleted: components["schemas"]["Memory"];
+            /** Supersedes Cleared */
+            supersedes_cleared: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -510,6 +528,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Memory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purge_memory_memories__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurgeResult"];
                 };
             };
             /** @description Validation Error */

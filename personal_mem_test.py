@@ -13,8 +13,8 @@ person. Two things live in this file:
 * **Tests** — each runs against a throwaway copy of `memory.db`, so the real
   store is never touched.
 
-Run directly:   .venv/Scripts/python.exe personal_mem_test.py
-Or with pytest: .venv/Scripts/python.exe -m pytest personal_mem_test.py
+Run directly:   uv run python personal_mem_test.py
+Or with pytest: uv run python -m pytest personal_mem_test.py
 """
 
 import shutil
@@ -346,6 +346,41 @@ def test_full_lifecycle_flow():
 # --------------------------------------------------------------------------- #
 # Standalone runner (no pytest required)
 # --------------------------------------------------------------------------- #
+def test_purge_removes_row_and_search_index():
+    _fresh_db()
+    row = store.commit_active(MemoryInput(title="Doomed", body="zebra quokka", category="tools"))
+    assert any(h["id"] == row["id"] for h in store.search_mem("quokka"))
+
+    out = store.purge_mem(row["id"])
+    assert out["deleted"]["id"] == row["id"]
+    # gone from the table…
+    try:
+        store.get_one_mem(row["id"])
+        assert False, "expected StoreError"
+    except StoreError:
+        pass
+    # …and from the FTS index, otherwise the text would survive the delete
+    assert not store.search_mem("quokka")
+
+
+def test_purge_clears_dangling_supersedes_and_guards():
+    _fresh_db()
+    old = store.commit_active(MemoryInput(title="Old", body="v1"))
+    new = store.commit_active(MemoryInput(title="New", body="v2", supersedes=old["id"]))
+    assert store.get_one_mem(new["id"])["supersedes"] == old["id"]
+
+    out = store.purge_mem(old["id"])
+    assert out["supersedes_cleared"] == 1
+    # the pointer would otherwise reference a row that no longer exists
+    assert store.get_one_mem(new["id"])["supersedes"] is None
+
+    try:
+        store.purge_mem(999999)
+        assert False, "expected StoreError"
+    except StoreError:
+        pass
+
+
 def _run_all() -> int:
     tests = sorted(n for n, v in globals().items() if n.startswith("test_") and callable(v))
     failed = 0

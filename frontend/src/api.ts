@@ -3,7 +3,7 @@
 //
 // Usage: const rows = await searchMemories({ choices: { status: ["candidate"] } });
 
-import type { Decision, Facets, Memory, MemoryFilter, MemoryInput, MemoryUpdate } from "./types";
+import type { Decision, Facets, Memory, MemoryFilter, MemoryInput, MemoryUpdate, PurgeResult } from "./types";
 
 /** One fetch wrapper: sets the JSON header, throws on non-2xx, parses the body. */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -46,3 +46,7 @@ export const reviewMemory = (decisions: Decision[]) =>
 /** PATCH /memories/:id — edit content fields of one memory. */
 export const updateMemory = (id: number, body: MemoryUpdate) =>
     request<Memory>(`/memories/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+
+/** DELETE /memories/:id — permanently remove one memory (row + search index). */
+export const purgeMemory = (id: number) =>
+    request<PurgeResult>(`/memories/${id}`, { method: "DELETE" });

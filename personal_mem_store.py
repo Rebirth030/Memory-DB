@@ -59,7 +59,10 @@ def _session(*, write: bool = False):
     try:
         conn = sqlite3.connect(f"file:{DB_PATH}" + ("" if write else "?mode=ro"), uri=True)
     except sqlite3.Error as e:
-        raise StoreError(f"could not open database: {e}") from e
+        # The sqlite3 message embeds the full DB path, and this string is handed
+        # to the client verbatim (HTTP 400 detail / ToolError). Keep it vague;
+        # `from e` preserves the real cause in the local traceback.
+        raise StoreError("could not open the memory database.") from e
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
@@ -216,6 +219,14 @@ class MemoryFilter(BaseModel):
 
     #limit: int = Field(50, ge=1, le=500, description="Max number of rows to return.")
     #offset: int = Field(0, ge=0, description="Rows to skip, for pagination.")
+
+
+class PurgeResult(BaseModel):
+    """What `purge_mem` removed — the deleted row, plus how many memories had
+    their `supersedes` pointer cleared because it referenced it."""
+
+    deleted: Memory
+    supersedes_cleared: int
 
 
 class Facets(BaseModel):
@@ -464,6 +475,33 @@ def review_mem(decisions: list[Decision]) -> list[dict[str, Any]]:
             f"SELECT * FROM memories WHERE id IN ({placeholders})", ids
         ).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+def purge_mem(id: int) -> dict[str, Any]:
+    """Permanently delete one memory — row and full-text index alike.
+
+    The lifecycle states are deliberately non-destructive: 'rejected' and
+    'superseded' keep the body around for history. This is the one place that
+    really removes it, for when the content itself should not exist any more.
+
+    Deliberately NOT exposed over MCP — deleting is a human decision made in the
+    web UI, never something an assistant does on its own.
+
+    Any memory pointing at this one via ``supersedes`` is cleared to NULL, since
+    the column has no foreign key and would otherwise dangle. Returns the deleted
+    row (last chance to see it) plus how many pointers were cleared.
+    """
+    with _session(write=True) as conn:
+        row = conn.execute("SELECT * FROM memories WHERE id = ?", (id,)).fetchone()
+        if row is None:
+            raise StoreError(f"purge: no memory with id {id}.")
+        cleared = conn.execute(
+            "UPDATE memories SET supersedes = NULL WHERE supersedes = ?", (id,)
+        ).rowcount
+        # the AFTER DELETE trigger (memories_ad) removes the FTS entry too
+        conn.execute("DELETE FROM memories WHERE id = ?", (id,))
+    return {"deleted": _row_to_dict(row), "supersedes_cleared": cleared}
+
 
 def list_memories(f: MemoryFilter) -> list[dict[str, Any]]:
     """Filtered, sorted, paginated read over memories (web-UI / admin path).

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent: keeps the personal-memory web UI running on macOS.
+
+  Replace the __PLACEHOLDER__ values (uv path, repo path, your home dir), then:
+
+      cp deploy/local.personal-memory.plist ~/Library/LaunchAgents/
+      launchctl load  ~/Library/LaunchAgents/local.personal-memory.plist
+      launchctl list | grep personal-memory        # confirm it's running
+
+  To stop / reload after editing:
+      launchctl unload ~/Library/LaunchAgents/local.personal-memory.plist
+
+  Note it serves the BUILT frontend, so run `npm run build` in frontend/ first
+  (and again after any UI change).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>local.personal-memory</string>
+
+    <!-- launchd starts with a bare environment, so `uv` needs its full path.
+         Find yours with: which uv -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PATH_TO_UV__</string>
+        <string>run</string>
+        <string>fastapi</string>
+        <string>run</string>
+        <string>api/app.py</string>
+        <!-- localhost only: this API has no auth and returns secrets -->
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8000</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__PATH_TO_REPO__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Optional: pin a specific store. Without it, memory.db next to the
+             source is used. Handy to keep a work machine separate. -->
+        <key>PERSONAL_MEM_DB</key>
+        <string>__PATH_TO_REPO__/memory.db</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <!-- don't hammer restarts if it crashes on startup -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>__PATH_TO_HOME__/Library/Logs/personal-memory.log</string>
+    <key>StandardErrorPath</key>
+    <string>__PATH_TO_HOME__/Library/Logs/personal-memory.err.log</string>
+</dict>
+</plist>
