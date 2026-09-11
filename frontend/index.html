@@ -1,15 +1,25 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>memory.db</title>
+    <meta name="description" content="Review, browse and edit the memories your AI assistants keep about you." />
+
+    <!-- SVG for modern browsers; PNGs for Safari and anything that ignores SVG icons -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- the app forces the light theme (see main.tsx); keep browser chrome in step -->
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#f4f2ec" />
+
+    <!-- an admin UI that shows secrets has no business in a search index -->
+    <meta name="robots" content="noindex, nofollow" />
   </head>
   <body>
+    <noscript>memory.db needs JavaScript to run.</noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

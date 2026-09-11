@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { type Memory, isSecret } from "../types";
 import { Lock } from "../ui";
 import { useAsync } from "../hooks/useAsync";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { getMemory, reviewMemory, searchMemories } from "../api";
 
 const SHORTCUTS = [
@@ -41,6 +42,8 @@ function Review() {
 
     const queue = candidates.filter((c) => !decided[c.id]);
     const cur = Math.max(0, Math.min(cursor, queue.length - 1));
+    // the pending count in the tab is the point of this page
+    useDocumentTitle(queue.length ? `Review (${queue.length})` : "Review");
 
     // The single persistence path for approve/reject (single item or bulk).
     // Optimistic: mark decided (removes from queue) → POST /memories/review → on
@@ -117,7 +120,7 @@ function Review() {
                     <div className="mx-auto mb-3.5 flex size-13 items-center justify-center rounded-full border-2 border-(--reject) text-[26px] font-bold text-(--reject)">!</div>
                     <div className="text-[18px] font-semibold">Couldn’t load candidates</div>
                     <div className="mt-1.5 text-[13.5px] text-(--text2)">
-                        {query.error} — is the API running on <span className="font-mono text-[12.5px] text-(--text)">127.0.0.1:8000</span>?
+                        {query.error} — is the API server running?
                     </div>
                     <button onClick={() => setReloadKey((k) => k + 1)} className="mt-4.5 cursor-pointer rounded-lg border border-(--border) bg-(--surface) px-5 py-2 text-[13px] font-medium text-(--text)">
                         ↻ Retry

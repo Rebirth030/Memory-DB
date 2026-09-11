@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { type Sensitivity, SENSITIVITIES, TYPES, CATEGORIES } from "../types";
 import { labelCls, inputCls, selectCls } from "../formStyles";
 import { commitMemory } from "../api";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 function Add() {
     const navigate = useNavigate();
@@ -16,6 +17,7 @@ function Add() {
     const [supersedes, setSupersedes] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    useDocumentTitle("Add memory");
 
     const canSave = title.trim() !== "" && body.trim() !== "" && !saving;
 

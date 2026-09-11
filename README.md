@@ -32,7 +32,8 @@ you'd rather call the venv directly, it's `.venv/bin/python` on macOS/Linux and
 ### 1. Install
 
 ```bash
-git clone https://github.com/Rebirth030/personal-memory-DB.git && cd personal-memory-DB
+git clone https://github.com/Rebirth030/Memory-DB.git
+cd Memory-DB
 uv sync
 ```
 
@@ -64,7 +65,7 @@ Moving to a new machine? Just copy `memory.db` across — it's a single file.
 ### 4. Register the MCP server
 
 ```bash
-claude mcp add personal-mem -- uv --directory /absolute/path/to/personal-memory run python personal_mem_mcp.py
+claude mcp add personal-mem -- uv --directory /absolute/path/to/Memory-DB run python personal_mem_mcp.py
 claude mcp list                     # should list 'personal-mem'
 ```
 
@@ -90,13 +91,17 @@ It will interview you (what to capture, what never to capture, how often to ask)
 and write the result. Keep the rules narrow at first: over-broad rules flood your
 review queue, and a queue you rubber-stamp defeats the whole point.
 
+[`docs/capture-guide.md`](docs/capture-guide.md) has the questions worth
+answering and example policies — for a personal store, a work store, or one per
+project.
+
 ## The web UI
 
 ### Development (two processes, hot reload)
 
 ```bash
 uv run fastapi dev api/app.py       # API on :8000, docs at /docs
-cd frontend && npm run dev          # UI on :5173, proxies /memories → :8000
+npm --prefix frontend run dev       # UI on :5173, proxies /memories → :8000
 ```
 
 ### Always-on (one process, one port)
@@ -105,7 +110,7 @@ Build the frontend once; the API then serves it from the same process, so there'
 no Vite server and no proxy:
 
 ```bash
-cd frontend && npm run build        # produces frontend/dist
+npm --prefix frontend run build     # produces frontend/dist
 uv run fastapi run api/app.py --host 127.0.0.1       # everything on http://127.0.0.1:8000
 ```
 
@@ -117,6 +122,29 @@ plist for macOS.
 > one person on one machine. Note that `fastapi run` defaults to `--host 0.0.0.0`,
 > which would publish it to your whole network, so always pass `--host 127.0.0.1`
 > (`fastapi dev` already binds to localhost).
+
+### On demand from Raycast (macOS)
+
+Rather not keep a server running? [`raycast/`](raycast/) has two Raycast Script
+Commands: **Memory DB** starts the server if needed and opens the UI, **Memory DB
+Stop** shuts it down again. Setup takes a minute — see
+[`raycast/README.md`](raycast/README.md).
+
+### Changing the port
+
+Everything defaults to port **8000**. If that clashes with something else you run
+(Django, `python -m http.server` and docker-compose all like it), change it where
+you start the server:
+
+| How you run it | Where to set the port |
+|---|---|
+| Command line | `uv run fastapi run api/app.py --host 127.0.0.1 --port 8765` |
+| Raycast | `PERSONAL_MEM_PORT=8765` in `raycast/config.sh` |
+| launchd | the `--port` argument in the plist |
+| Development | `fastapi dev … --port 8765`, plus the proxy target in `frontend/vite.config.ts` |
+
+The UI talks to the API over relative URLs, so nothing else in the frontend needs
+to change.
 
 ## Your data
 
@@ -147,7 +175,7 @@ machine's store separate from your personal one, or for demoing:
 
 ```bash
 # macOS/Linux
-PERSONAL_MEM_DB=/Users/you/personal-memory/work.db uv run fastapi run api/app.py --host 127.0.0.1
+PERSONAL_MEM_DB=/Users/you/Memory-DB/work.db uv run fastapi run api/app.py --host 127.0.0.1
 
 # Windows (PowerShell)
 $env:PERSONAL_MEM_DB = "C:\path\to\work.db"; uv run fastapi run api/app.py --host 127.0.0.1
@@ -164,11 +192,13 @@ uv run python personal_mem_test.py      # runs on throwaway copies, never your r
 ## Regenerating the frontend types
 
 The TypeScript types are generated from the API schema, so the Pydantic models
-stay the single source of truth:
+stay the single source of truth. The generator is fetched on demand via `npx`
+rather than installed as a dependency, so its own TypeScript requirement can't
+clash with the app's:
 
 ```bash
 uv run python -c "import json, api.app as a; json.dump(a.app.openapi(), open('frontend/openapi.json','w'), indent=2)"
-cd frontend && npm run gen:api
+npm --prefix frontend run gen:api
 ```
 
 ## Layout
@@ -180,4 +210,7 @@ cd frontend && npm run gen:api
 | `api/app.py` | FastAPI JSON API + serves the built frontend |
 | `frontend/` | React + Vite SPA |
 | `memory_init.py` | schema setup · `seed_demo.py` — demo data |
+| `deploy/` | keep the UI running in the background (launchd) |
+| `raycast/` | start / stop the UI on demand from Raycast |
+| `docs/capture-guide.md` | deciding what a store should remember |
 | `docs/decisions/` | ADRs — start with ADR-001 (the approval flow) |

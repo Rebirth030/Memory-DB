@@ -4,6 +4,7 @@ import { type FacetKey, type Memory, isFaded, isSecret, statusStyle } from "../t
 import { Lock, SearchIcon } from "../ui";
 import { fmt } from "../format";
 import { useAsync } from "../hooks/useAsync";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { getFacets, searchMemories } from "../api";
 
 const FACET_KEYS: FacetKey[] = ["status", "sensitivity", "category", "type", "source"];
@@ -34,6 +35,7 @@ function Browse() {
     const [filters, setFilters] = useState<Filters>(EMPTY);
     const [sort, setSort] = useState<{ by: keyof Memory; desc: boolean }>({ by: "updated_at", desc: true });
     const [openFacet, setOpenFacet] = useState<string | null>(null);
+    useDocumentTitle("Library");
 
     // client-side filter: facet checkboxes (AND across facets) + free-text over title/body/tags
     const q = search.trim().toLowerCase();

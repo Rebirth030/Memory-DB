@@ -9,9 +9,11 @@ import {
     TYPES,
     CATEGORIES,
     statusStyle,
+    isSecret,
 } from "../types";
 import { labelCls, inputCls, selectCls } from "../formStyles";
 import { useAsync } from "../hooks/useAsync";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { getMemory, purgeMemory, updateMemory } from "../api";
 
 function Detail() {
@@ -40,6 +42,12 @@ function DetailView({ memoryId }: { memoryId: number }) {
     const sid = memory?.supersedes ?? null;
     const oldQuery = useAsync(() => (sid != null ? getMemory(sid) : Promise.resolve(null)), [sid]);
     const old = oldQuery.data;
+
+    // Tab titles end up in browser history (and whatever syncs it), so a
+    // secret memory's title stays out of it — the id is enough to find it again.
+    useDocumentTitle(
+        memory && !isSecret(memory.sensitivity) ? `#${memory.id} ${memory.title}` : `#${memoryId}`,
+    );
 
     if (query.loading && !memory) {
         return <div className="mx-auto max-w-195 px-5.5 pt-6.5 text-[13px] text-(--muted)">Loading memory…</div>;

@@ -3,11 +3,13 @@ import { isFaded, isSecret, statusStyle } from "../types";
 import { Lock } from "../ui";
 import { fmtDate } from "../format";
 import { useAsync } from "../hooks/useAsync";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { searchMemories } from "../api";
 
 function Home() {
     const navigate = useNavigate();
     const { data, loading, error } = useAsync(() => searchMemories(), []);
+    useDocumentTitle();
 
     const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
     const hour = new Date().getHours();

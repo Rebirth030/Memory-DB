@@ -3,13 +3,17 @@
 The review queue is only useful if it's *there* when you want it. This directory
 has what you need to keep the UI running in the background.
 
+Rather start it only when you need it? The Raycast commands in
+[`../raycast/`](../raycast/) do that. Use one or the other — while this agent is
+loaded, those commands tell you so instead of fighting it.
+
 ## Prerequisite: build the frontend
 
 In always-on mode the API serves the built SPA itself — one process, one port, no
 Vite server and no proxy:
 
 ```bash
-cd frontend && npm run build
+npm --prefix frontend run build
 ```
 
 `api/app.py` mounts `frontend/dist` if it exists, so this is what makes

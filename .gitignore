@@ -62,3 +62,8 @@ pnpm-debug.log*
 *.swp
 .DS_Store
 Thumbs.db
+
+# ---------------------------------------------------------------------------
+# Local Raycast settings (see raycast/config.example.sh)
+# ---------------------------------------------------------------------------
+raycast/config.sh
