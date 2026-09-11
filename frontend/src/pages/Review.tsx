@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { type Memory, isSecret } from "../types";
-import { Lock } from "../ui";
+import { ClampedText, Lock } from "../ui";
 import { useAsync } from "../hooks/useAsync";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { getMemory, reviewMemory, searchMemories } from "../api";
@@ -10,6 +10,7 @@ const SHORTCUTS = [
     { k: "A", label: "approve" },
     { k: "R", label: "reject" },
     { k: "E", label: "edit" },
+    { k: "O", label: "expand text" },
     { k: "J / K", label: "next / prev" },
 ];
 
@@ -35,6 +36,7 @@ function Review() {
     const [selected, setSelected] = useState<number[]>([]);
     const [expanded, setExpanded] = useState<number[]>([]);
     const [revealed, setRevealed] = useState<number[]>([]);
+    const [openText, setOpenText] = useState<number[]>([]);   // bodies shown in full
     const [rejecting, setRejecting] = useState<number | null>(null);
     const [rejectReason, setRejectReason] = useState("");
     const [cursor, setCursor] = useState(0);
@@ -62,7 +64,7 @@ function Review() {
         }
     }, []);
 
-    // keyboard navigation (j/k move, a approve, r reject, e edit, esc cancel)
+    // keyboard navigation (j/k move, a approve, r reject, e edit, o expand text, esc cancel)
     useEffect(() => {
         function onKey(e: KeyboardEvent) {
             const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
@@ -76,6 +78,11 @@ function Review() {
             else if (k === "a") { void decide([q[c].id], true); e.preventDefault(); }
             else if (k === "r") { setRejecting(q[c].id); setRejectReason(""); e.preventDefault(); }
             else if (k === "e") { navigate(`/memory/${q[c].id}`); e.preventDefault(); }
+            else if (k === "o") {
+                const id = q[c].id;
+                setOpenText((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id]));
+                e.preventDefault();
+            }
             else if (k === "escape") { setRejecting(null); }
         }
         window.addEventListener("keydown", onKey);
@@ -223,7 +230,12 @@ function Review() {
                                                 </div>
                                                 {/* body or reveal */}
                                                 {shown ? (
-                                                    <div className="line-clamp-2 text-[13.5px] leading-relaxed text-(--text2)">{q.body}</div>
+                                                    <ClampedText
+                                                        text={q.body}
+                                                        open={openText.includes(q.id)}
+                                                        onToggle={() => setOpenText((o) => toggle(o, q.id))}
+                                                        className="text-[13.5px] leading-relaxed text-(--text2)"
+                                                    />
                                                 ) : (
                                                     <button
                                                         onClick={() => setRevealed((r) => [...r, q.id])}
