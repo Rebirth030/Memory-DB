@@ -9,3 +9,8 @@
 # Which database to serve. Defaults to memory.db in the repo root; point it
 # somewhere else to keep, say, a work store apart from your personal one.
 # PERSONAL_MEM_DB="$HOME/Memory-DB/work.db"
+
+# Using a Node version manager the scripts don't find on their own (they look
+# for fnm, nvm, volta, mise and asdf)? Add the directory that holds node and npm.
+# Only needed for the automatic frontend build.
+# PATH="$HOME/path/to/node/bin:$PATH"

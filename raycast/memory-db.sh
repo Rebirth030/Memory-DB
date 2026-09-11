@@ -38,6 +38,32 @@ AGENT="local.personal-memory"       # label of the launchd agent in ../deploy/
 # rather than just locating uv — also lets npm's `#!/usr/bin/env node` find node.
 export PATH="/opt/homebrew/bin:/usr/local/bin:${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
 
+# Node version managers keep node/npm elsewhere, and their shell hooks never run
+# in this shell (fnm's per-shell fnm_multishells dir doesn't even exist here).
+# Use each one's stable location instead: fnm's and nvm's "default" point at the
+# selected version, volta/mise/asdf have fixed shim dirs. Anything else: extend
+# PATH in config.sh.
+nvm_bin() {
+    local want dir
+    want="$(cat "${HOME}/.nvm/alias/default" 2>/dev/null)" || return 1
+    want="v${want#v}"
+    # an exact version, or an installed match for a partial one ("22" -> v22.x);
+    # aliases like lts/* resolve to nothing here and just fall through
+    for dir in "${HOME}/.nvm/versions/node/${want}" "${HOME}/.nvm/versions/node/${want}".*; do
+        [ -d "${dir}/bin" ] && { echo "${dir}/bin"; return 0; }
+    done
+    return 1
+}
+for dir in "${FNM_DIR:-${HOME}/.local/share/fnm}/aliases/default/bin" \
+           "${HOME}/Library/Application Support/fnm/aliases/default/bin" \
+           "$(nvm_bin)" \
+           "${HOME}/.volta/bin" \
+           "${HOME}/.local/share/mise/shims" \
+           "${HOME}/.asdf/shims"; do
+    [ -n "$dir" ] && [ -d "$dir" ] && PATH="${dir}:${PATH}"
+done
+export PATH
+
 up() { curl -sf -o /dev/null -m 1 "$PROBE"; }
 
 if up; then
@@ -64,11 +90,23 @@ command -v uv >/dev/null || { echo "uv not found — see https://docs.astral.sh/
 cd "$REPO" || { echo "Repo not found: ${REPO}"; exit 1; }
 mkdir -p "$(dirname "$LOG")"
 
-# Without a built frontend the server only has the JSON API, and / would 404.
-if [ ! -f frontend/dist/index.html ]; then
+# Build the frontend when there is none yet (the server would only have the JSON
+# API, and / would 404) — or when its sources changed since the last build, e.g.
+# after a git pull, so the server doesn't keep serving a stale UI.
+needs_build() {
+    [ -f frontend/dist/index.html ] || return 0
+    [ -n "$(find frontend/src frontend/public frontend/index.html \
+                 frontend/package.json frontend/package-lock.json \
+                 -newer frontend/dist/index.html 2>/dev/null | head -n 1)" ]
+}
+
+if needs_build; then
     command -v npm >/dev/null ||
         { echo "Frontend not built — run: npm --prefix frontend run build"; exit 1; }
-    if [ ! -d frontend/node_modules ]; then
+    # npm records every install in node_modules/.package-lock.json. If the
+    # lockfile is newer (fresh clone, or a pull changed the dependencies),
+    # reinstall first — building against stale node_modules can fail.
+    if [ frontend/package-lock.json -nt frontend/node_modules/.package-lock.json ]; then
         npm --prefix frontend ci --no-audit --no-fund >> "$LOG" 2>&1 ||
             { echo "npm ci failed — see ${LOG}"; exit 1; }
     fi

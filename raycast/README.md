@@ -10,23 +10,23 @@ plain shell, no build step, no dependencies. macOS only.
 
 | Command | What it does |
 |---|---|
-| **Memory DB** (`memory-db.sh`) | Starts the server if it isn't running, waits for it, opens the UI. Builds the frontend first if it hasn't been built yet. |
+| **Memory DB** (`memory-db.sh`) | Starts the server if it isn't running, waits for it, opens the UI. Builds the frontend first if there's no build yet or its sources changed since (e.g. after a `git pull`). |
 | **Memory DB Stop** (`memory-db-stop.sh`) | Stops the server and frees the port. |
 
 ## Setup
 
 1. Finish the main [setup](../README.md#setup) — at least `uv sync` and a database.
-2. Make the scripts executable:
-   ```bash
-   chmod +x raycast/*.sh
-   ```
-3. In Raycast: **Settings → Extensions → "+" → Add Script Directory**, and pick
+2. In Raycast: **Settings → Extensions → "+" → Add Script Directory**, and pick
    this `raycast/` folder.
 
    This is *not* "Create Extension" — that generates a TypeScript project and is
    a different mechanism entirely.
-4. Run **Memory DB** from the Raycast root search. The first run also builds the
+3. Run **Memory DB** from the Raycast root search. The first run also builds the
    frontend, so it takes a little longer.
+
+The scripts are marked executable in git. If Raycast still reports
+`permission denied` — say, because you copied the files instead of cloning —
+run `chmod +x raycast/*.sh`.
 
 ## Settings (optional)
 
@@ -49,8 +49,11 @@ cp raycast/config.example.sh raycast/config.sh
 - The scripts find the repo from their own location, so they work in any clone
   without editing.
 - Raycast runs scripts in a non-login shell, where Homebrew's bin isn't on
-  `PATH`. The scripts add the usual locations (Homebrew on Apple Silicon and
-  Intel, `~/.local/bin`, `~/.cargo/bin`) so `uv`, `npm` and `node` are found.
+  `PATH`, and version managers' shell hooks never run. The scripts add the usual
+  locations — Homebrew on Apple Silicon and Intel, `~/.local/bin`,
+  `~/.cargo/bin`, and the default versions of fnm, nvm, volta, mise and asdf —
+  so `uv`, `npm` and `node` are found. Anything else can go on `PATH` in
+  `config.sh`.
 - `--host 127.0.0.1` is passed explicitly — the API has no auth and returns
   secrets.
 - The stop command only stops a server whose working directory is this repo, so
